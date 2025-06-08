@@ -1,7 +1,7 @@
 import sqlite3
 from typing import List, Optional
 
-from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode, BaseBlueprint # Added BaseBlueprint
+from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode, BaseBlueprint, LoreEntry # Added LoreEntry
 from app.data.database import get_db_connection
 from app.utils.logger import get_logger
 
@@ -908,3 +908,169 @@ def delete_base_blueprint(blueprint_id: int, db_path: Optional[str] = None) -> b
             conn.close()
 
 logger.info("CRUD functions for BaseBlueprint defined.")
+
+# --- CRUD Operations for LoreEntry ---
+
+def _lore_entry_to_dict(entry: LoreEntry, for_update: bool = False) -> dict:
+    data = entry.__dict__.copy()
+    data.pop('id', None)
+
+    if for_update:
+        default_instance = entry.__class__()
+        update_dict = {}
+        for field_name, current_value in data.items():
+            if field_name not in entry.__class__.__dataclass_fields__:
+                continue
+            default_value = getattr(default_instance, field_name)
+            if current_value != default_value:
+                update_dict[field_name] = current_value
+        return update_dict
+    else: # For create
+        return {k: v for k, v in data.items() if v is not None}
+
+def create_lore_entry(entry: LoreEntry, db_path: Optional[str] = None) -> Optional[int]:
+    """Creates a new lore entry in the database."""
+    data = _lore_entry_to_dict(entry, for_update=False)
+    if not data.get('title'):
+        logger.error("LoreEntry title is required for creation.")
+        return None
+
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        
+        columns = ', '.join(data.keys())
+        placeholders = ':' + ', :'.join(data.keys())
+        sql = f'INSERT INTO lore_entry ({columns}) VALUES ({placeholders})'
+        
+        cursor.execute(sql, data)
+        conn.commit()
+        new_id = cursor.lastrowid
+        logger.info(f"LoreEntry '{entry.title}' created with ID: {new_id} in DB: {db_path if db_path else 'default'}")
+        return new_id
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Failed to create LoreEntry '{entry.title}' due to integrity error (e.g., duplicate title): {e}")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while creating LoreEntry '{entry.title}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_lore_entry_by_id(entry_id: int, db_path: Optional[str] = None) -> Optional[LoreEntry]:
+    """Retrieves a lore entry by its ID."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM lore_entry WHERE id = ?", (entry_id,))
+        row = cursor.fetchone()
+        if row:
+            logger.debug(f"LoreEntry with ID {entry_id} found.")
+            return LoreEntry(**dict(row))
+        logger.debug(f"LoreEntry with ID {entry_id} not found.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching LoreEntry ID {entry_id}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_lore_entry_by_title(title: str, db_path: Optional[str] = None) -> Optional[LoreEntry]:
+    """Retrieves a lore entry by its title."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM lore_entry WHERE title = ?", (title,))
+        row = cursor.fetchone()
+        if row:
+            logger.debug(f"LoreEntry with title '{title}' found.")
+            return LoreEntry(**dict(row))
+        logger.debug(f"LoreEntry with title '{title}' not found.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching LoreEntry title '{title}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_all_lore_entries(db_path: Optional[str] = None) -> List[LoreEntry]:
+    """Retrieves all lore entries from the database."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM lore_entry ORDER BY title")
+        rows = cursor.fetchall()
+        entries = [LoreEntry(**dict(row)) for row in rows]
+        logger.debug(f"Retrieved {len(entries)} lore entries.")
+        return entries
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching all lore entries: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def update_lore_entry(entry_id: int, update_data: LoreEntry, db_path: Optional[str] = None) -> bool:
+    """Updates an existing lore entry."""
+    data_to_update = _lore_entry_to_dict(update_data, for_update=True)
+
+    if not data_to_update:
+        logger.warning(f"No updatable fields provided for LoreEntry ID {entry_id}.")
+        return False
+
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        
+        set_clause = ", ".join([f"{key} = :{key}" for key in data_to_update.keys()])
+        sql = f"UPDATE lore_entry SET {set_clause} WHERE id = :id"
+        
+        data_to_update['id'] = entry_id
+        
+        cursor.execute(sql, data_to_update)
+        conn.commit()
+        
+        if cursor.rowcount > 0:
+            logger.info(f"LoreEntry ID {entry_id} updated successfully.")
+            return True
+        logger.warning(f"LoreEntry ID {entry_id} not found or no changes made during update.")
+        return False
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Failed to update LoreEntry ID {entry_id} due to integrity error: {e}")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Database error while updating LoreEntry ID {entry_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def delete_lore_entry(entry_id: int, db_path: Optional[str] = None) -> bool:
+    """Deletes a lore entry by its ID."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM lore_entry WHERE id = ?", (entry_id,))
+        conn.commit()
+        if cursor.rowcount > 0:
+            logger.info(f"LoreEntry ID {entry_id} deleted successfully.")
+            return True
+        logger.warning(f"LoreEntry ID {entry_id} not found for deletion.")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Database error while deleting LoreEntry ID {entry_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+logger.info("CRUD functions for LoreEntry defined.")

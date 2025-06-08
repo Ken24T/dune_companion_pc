@@ -2,7 +2,7 @@ import pytest
 import os
 import time # Added for sleep
 from app.data.database import initialize_database, get_db_connection
-from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode, BaseBlueprint # Added BaseBlueprint
+from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode, BaseBlueprint, LoreEntry # Added LoreEntry
 from app.data.crud import (
     create_resource,
     get_resource_by_id,
@@ -27,7 +27,13 @@ from app.data.crud import (
     get_base_blueprint_by_name,
     get_all_base_blueprints,
     update_base_blueprint,
-    delete_base_blueprint
+    delete_base_blueprint,
+    create_lore_entry,
+    get_lore_entry_by_id,
+    get_lore_entry_by_title,
+    get_all_lore_entries,
+    update_lore_entry,
+    delete_lore_entry
 )
 from app.utils.logger import shutdown_logging # To close log file handles
 from datetime import datetime
@@ -1067,6 +1073,192 @@ def test_base_blueprint_updated_at_trigger(test_db):
     assert updated_bp_db.updated_at is not None
     final_created_at = datetime.fromisoformat(updated_bp_db.created_at)
     final_updated_at = datetime.fromisoformat(updated_bp_db.updated_at)
+
+    assert final_created_at == initial_created_at
+    assert final_updated_at >= initial_updated_at
+
+# --- CRUD Tests for LoreEntry ---
+
+def test_create_lore_entry(test_db):
+    """Test creating a new lore entry."""
+    entry_data = LoreEntry(
+        title="The Butlerian Jihad",
+        content_markdown="A crusade against thinking machines.",
+        category="History",
+        tags='''["war", "robots", "mentats"]''' # Ensure valid JSON string
+    )
+    entry_id = create_lore_entry(entry_data, db_path=test_db)
+    assert entry_id is not None
+
+    retrieved_entry = get_lore_entry_by_id(entry_id, db_path=test_db)
+    assert retrieved_entry is not None
+    assert retrieved_entry.title == "The Butlerian Jihad"
+    assert retrieved_entry.content_markdown == "A crusade against thinking machines."
+    assert retrieved_entry.category == "History"
+    assert retrieved_entry.tags == '''["war", "robots", "mentats"]'''
+    assert retrieved_entry.created_at is not None
+    assert retrieved_entry.updated_at is not None
+
+def test_create_lore_entry_missing_title(test_db):
+    """Test creating a lore entry with a missing title (should fail)."""
+    entry_data = LoreEntry(content_markdown="Content without a title.")
+    entry_id = create_lore_entry(entry_data, db_path=test_db)
+    assert entry_id is None, "Creating a lore entry without a title should fail."
+
+def test_create_lore_entry_duplicate_title(test_db):
+    """Test creating a lore entry with a duplicate title (should fail)."""
+    entry1 = LoreEntry(title="Duplicate Lore Title")
+    create_lore_entry(entry1, db_path=test_db)
+    
+    entry2 = LoreEntry(title="Duplicate Lore Title")
+    entry_id2 = create_lore_entry(entry2, db_path=test_db)
+    assert entry_id2 is None, "Creating a lore entry with a duplicate title should fail."
+
+def test_get_lore_entry_by_id(test_db):
+    """Test retrieving a lore entry by its ID."""
+    entry_data = LoreEntry(title="Specific Lore Entry")
+    entry_id = create_lore_entry(entry_data, db_path=test_db)
+    assert entry_id is not None
+
+    retrieved_entry = get_lore_entry_by_id(entry_id, db_path=test_db)
+    assert retrieved_entry is not None
+    assert retrieved_entry.id == entry_id
+    assert retrieved_entry.title == "Specific Lore Entry"
+
+def test_get_lore_entry_by_id_non_existent(test_db):
+    """Test retrieving a non-existent lore entry by ID."""
+    retrieved_entry = get_lore_entry_by_id(12345, db_path=test_db)
+    assert retrieved_entry is None
+
+def test_get_lore_entry_by_title(test_db):
+    """Test retrieving a lore entry by its title."""
+    entry_data = LoreEntry(title="Searchable Lore Title")
+    create_lore_entry(entry_data, db_path=test_db)
+
+    retrieved_entry = get_lore_entry_by_title("Searchable Lore Title", db_path=test_db)
+    assert retrieved_entry is not None
+    assert retrieved_entry.title == "Searchable Lore Title"
+
+def test_get_lore_entry_by_title_non_existent(test_db):
+    """Test retrieving a non-existent lore entry by title."""
+    retrieved_entry = get_lore_entry_by_title("NonExistentLoreTitle", db_path=test_db)
+    assert retrieved_entry is None
+
+def test_get_all_lore_entries(test_db):
+    """Test retrieving all lore entries."""
+    entries_data = [
+        LoreEntry(title="Lore Alpha"),
+        LoreEntry(title="Lore Beta"),
+        LoreEntry(title="Lore Gamma")
+    ]
+    for entry_data in entries_data:
+        create_lore_entry(entry_data, db_path=test_db)
+
+    all_entries = get_all_lore_entries(db_path=test_db)
+    assert len(all_entries) == len(entries_data)
+    
+    retrieved_titles = sorted([entry.title for entry in all_entries])
+    expected_titles = sorted([entry_data.title for entry_data in entries_data])
+    assert retrieved_titles == expected_titles
+
+def test_update_lore_entry(test_db):
+    """Test updating an existing lore entry."""
+    entry_data = LoreEntry(title="Evolving Lore", content_markdown="Chapter 1")
+    entry_id = create_lore_entry(entry_data, db_path=test_db)
+    assert entry_id is not None
+
+    initial_entry = get_lore_entry_by_id(entry_id, db_path=test_db)
+    assert initial_entry is not None
+    assert initial_entry.created_at is not None
+    assert initial_entry.updated_at is not None
+    initial_created_at = datetime.fromisoformat(initial_entry.created_at)
+    initial_updated_at = datetime.fromisoformat(initial_entry.updated_at)
+
+    time.sleep(0.05) 
+
+    update_payload = LoreEntry(content_markdown="Chapter 1, revised.", category="Updated Category")
+    success = update_lore_entry(entry_id, update_payload, db_path=test_db)
+    assert success is True
+
+    updated_entry = get_lore_entry_by_id(entry_id, db_path=test_db)
+    assert updated_entry is not None
+    assert updated_entry.title == "Evolving Lore" 
+    assert updated_entry.content_markdown == "Chapter 1, revised."
+    assert updated_entry.category == "Updated Category"
+    
+    assert updated_entry.created_at is not None
+    assert updated_entry.updated_at is not None
+    updated_created_at = datetime.fromisoformat(updated_entry.created_at)
+    updated_updated_at = datetime.fromisoformat(updated_entry.updated_at)
+
+    assert updated_created_at == initial_created_at
+    assert updated_updated_at >= initial_updated_at
+
+def test_update_lore_entry_change_title_duplicate(test_db):
+    """Test updating a lore entry title to an existing title (should fail)."""
+    entryA = LoreEntry(title="LoreTitleA")
+    entryA_id = create_lore_entry(entryA, db_path=test_db)
+    assert entryA_id is not None
+    entryB = LoreEntry(title="LoreTitleB")
+    create_lore_entry(entryB, db_path=test_db)
+
+    update_payload = LoreEntry(title="LoreTitleB") 
+    success = update_lore_entry(entryA_id, update_payload, db_path=test_db)
+    assert success is False, "Updating title to a duplicate should fail."
+
+    original_entryA = get_lore_entry_by_id(entryA_id, db_path=test_db)
+    assert original_entryA is not None
+    assert original_entryA.title == "LoreTitleA"
+
+def test_update_lore_entry_non_existent(test_db):
+    """Test updating a non-existent lore entry."""
+    update_payload = LoreEntry(title="NonExistentUpdatedLore")
+    success = update_lore_entry(9999, update_payload, db_path=test_db)
+    assert success is False
+
+def test_delete_lore_entry(test_db):
+    """Test deleting a lore entry."""
+    entry_data = LoreEntry(title="Temporary Lore")
+    entry_id = create_lore_entry(entry_data, db_path=test_db)
+    assert entry_id is not None
+    assert get_lore_entry_by_id(entry_id, db_path=test_db) is not None
+
+    success = delete_lore_entry(entry_id, db_path=test_db)
+    assert success is True
+    assert get_lore_entry_by_id(entry_id, db_path=test_db) is None
+
+def test_delete_lore_entry_non_existent(test_db):
+    """Test deleting a non-existent lore entry."""
+    success = delete_lore_entry(8888, db_path=test_db)
+    assert success is False
+
+def test_lore_entry_updated_at_trigger(test_db):
+    """Test that the updated_at field is automatically updated for lore_entry."""
+    entry = LoreEntry(title="TriggerLore", content_markdown="Initial Content")
+    entry_id = create_lore_entry(entry, db_path=test_db)
+    assert entry_id is not None
+
+    initial_entry = get_lore_entry_by_id(entry_id, db_path=test_db)
+    assert initial_entry is not None
+    assert initial_entry.created_at is not None
+    assert initial_entry.updated_at is not None
+    initial_created_at = datetime.fromisoformat(initial_entry.created_at)
+    initial_updated_at = datetime.fromisoformat(initial_entry.updated_at)
+
+    assert abs(initial_created_at.timestamp() - initial_updated_at.timestamp()) < 0.1
+
+    time.sleep(0.05) 
+
+    update_payload = LoreEntry(content_markdown="Updated Content")
+    update_success = update_lore_entry(entry_id, update_payload, db_path=test_db)
+    assert update_success
+
+    updated_entry_db = get_lore_entry_by_id(entry_id, db_path=test_db)
+    assert updated_entry_db is not None
+    assert updated_entry_db.created_at is not None
+    assert updated_entry_db.updated_at is not None
+    final_created_at = datetime.fromisoformat(updated_entry_db.created_at)
+    final_updated_at = datetime.fromisoformat(updated_entry_db.updated_at)
 
     assert final_created_at == initial_created_at
     assert final_updated_at >= initial_updated_at
