@@ -84,7 +84,7 @@ def initialize_database(db_path: Optional[str] = None):
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS skill_tree_node (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
                 description TEXT,
                 skill_tree_name TEXT, -- e.g., Combat, Survival, Crafting
                 parent_node_id INTEGER,
@@ -94,7 +94,8 @@ def initialize_database(db_path: Optional[str] = None):
                 unlocked INTEGER DEFAULT 0, -- Boolean (0 or 1)
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (parent_node_id) REFERENCES skill_tree_node(id)
+                FOREIGN KEY (parent_node_id) REFERENCES skill_tree_node(id) ON DELETE SET NULL, -- Added ON DELETE SET NULL
+                UNIQUE (name, skill_tree_name) -- Changed name to be unique per skill_tree_name
             )
         ''')
         logger.info("Table 'skill_tree_node' checked/created.")

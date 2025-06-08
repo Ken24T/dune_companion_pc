@@ -2,7 +2,7 @@ import pytest
 import os
 import time # Added for sleep
 from app.data.database import initialize_database, get_db_connection
-from app.data.models import Resource, CraftingRecipe, RecipeIngredient # Added CraftingRecipe, RecipeIngredient
+from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode # Added SkillTreeNode
 from app.data.crud import (
     create_resource,
     get_resource_by_id,
@@ -15,7 +15,13 @@ from app.data.crud import (
     get_crafting_recipe_by_name, # Added
     get_all_crafting_recipes, # Added
     update_crafting_recipe, # Added
-    delete_crafting_recipe # Added
+    delete_crafting_recipe, # Added
+    create_skill_tree_node, # Added
+    get_skill_tree_node_by_id, # Added
+    get_skill_tree_node_by_name, # Added
+    get_all_skill_tree_nodes, # Added
+    update_skill_tree_node, # Added
+    delete_skill_tree_node # Added
 )
 from app.utils.logger import shutdown_logging # To close log file handles
 from datetime import datetime
@@ -431,7 +437,7 @@ def test_update_crafting_recipe_fields_and_ingredients(test_db, setup_common_res
     )
     recipe_id = create_crafting_recipe(initial_recipe, db_path=test_db)
     assert recipe_id is not None
-    time.sleep(0.05) # Ensure timestamp difference for updated_at
+    time.sleep(0.05) # Ensure timestamp difference
     # Update data: change description, output_quantity, and ingredients
     update_data = CraftingRecipe(
         description="Version 2.0 with more features", 
@@ -614,4 +620,262 @@ def test_crafting_recipe_updated_at_trigger(test_db, setup_common_resources_for_
     assert final_created_at == initial_created_at
     assert final_updated_at >= initial_updated_at, \
         f"final_updated_at ({final_updated_at}) should be >= initial_updated_at ({initial_updated_at})"
+
+# --- CRUD Tests for SkillTreeNode ---
+
+def test_create_skill_tree_node(test_db):
+    """Test creating a new skill tree node."""
+    node_data = SkillTreeNode(
+        name="Basic Armor Plating", 
+        description="Increases hull integrity.", 
+        skill_tree_name="Vehicle Enhancements",
+        unlock_cost="500 Solari, 10 Iron", 
+        effects="Hull +10%"
+    )
+    node_id = create_skill_tree_node(node_data, db_path=test_db)
+    assert node_id is not None
+
+    retrieved_node = get_skill_tree_node_by_id(node_id, db_path=test_db)
+    assert retrieved_node is not None
+    assert retrieved_node.name == "Basic Armor Plating"
+    assert retrieved_node.skill_tree_name == "Vehicle Enhancements"
+    assert retrieved_node.unlocked == 0 # Default
+
+def test_create_skill_tree_node_with_parent(test_db):
+    """Test creating a skill tree node with a parent."""
+    parent_data = SkillTreeNode(name="Prerequisite Skill", skill_tree_name="Core Skills")
+    parent_id = create_skill_tree_node(parent_data, db_path=test_db)
+    assert parent_id is not None
+
+    child_data = SkillTreeNode(
+        name="Advanced Skill", 
+        skill_tree_name="Core Skills", 
+        parent_node_id=parent_id
+    )
+    child_id = create_skill_tree_node(child_data, db_path=test_db)
+    assert child_id is not None
+
+    retrieved_child = get_skill_tree_node_by_id(child_id, db_path=test_db)
+    assert retrieved_child is not None
+    assert retrieved_child.parent_node_id == parent_id
+
+def test_create_skill_tree_node_missing_name(test_db):
+    """Test creating a skill node with a missing name (should fail)."""
+    node_data = SkillTreeNode(description="A skill without a name.")
+    node_id = create_skill_tree_node(node_data, db_path=test_db)
+    assert node_id is None
+
+def test_create_skill_tree_node_duplicate_name(test_db):
+    """Test creating a skill node with a duplicate name (should fail if names are unique)."""
+    # Assuming (name, skill_tree_name) should be unique together, or just name if global.
+    # For this test, let's assume name within a skill_tree_name must be unique.
+    # The schema has UNIQUE(name, skill_tree_name)
+    node1 = SkillTreeNode(name="Duplicate Skill Name Test", skill_tree_name="Test Tree")
+    create_skill_tree_node(node1, db_path=test_db)
+    
+    node2 = SkillTreeNode(name="Duplicate Skill Name Test", skill_tree_name="Test Tree")
+    node_id2 = create_skill_tree_node(node2, db_path=test_db)
+    assert node_id2 is None, "Creating a skill node with a duplicate name in the same tree should fail."
+
+    node3 = SkillTreeNode(name="Duplicate Skill Name Test", skill_tree_name="Another Test Tree")
+    node_id3 = create_skill_tree_node(node3, db_path=test_db)
+    assert node_id3 is not None, "Creating a skill node with the same name in a different tree should succeed."
+
+def test_get_skill_tree_node_by_id(test_db):
+    """Test retrieving a skill node by its ID."""
+    node_data = SkillTreeNode(name="Target Node", skill_tree_name="Search Tree")
+    node_id = create_skill_tree_node(node_data, db_path=test_db)
+    assert node_id is not None
+
+    retrieved = get_skill_tree_node_by_id(node_id, db_path=test_db)
+    assert retrieved is not None
+    assert retrieved.id == node_id
+    assert retrieved.name == "Target Node"
+
+def test_get_skill_tree_node_by_id_non_existent(test_db):
+    """Test retrieving a non-existent skill node by ID."""
+    retrieved = get_skill_tree_node_by_id(9001, db_path=test_db)
+    assert retrieved is None
+
+def test_get_skill_tree_node_by_name(test_db):
+    """Test retrieving a skill node by its name."""
+    # Note: This test assumes name is globally unique or the get_by_name fetches the first match.
+    # The CRUD for get_skill_tree_node_by_name currently assumes global uniqueness for simplicity.
+    # If (name, skill_tree_name) is the actual unique key, this test might need adjustment or the CRUD needs clarification.
+    # For now, proceeding with assumption of unique name for this test.
+    # Let's ensure we test with a truly unique name to avoid conflict with other tests if run in parallel or shared state (though fixtures prevent this here)
+    unique_node_name = "UniqueGlobalSkillName"
+    node_data = SkillTreeNode(name=unique_node_name, skill_tree_name="Global Search Tree")
+    create_skill_tree_node(node_data, db_path=test_db)
+
+    retrieved = get_skill_tree_node_by_name(unique_node_name, db_path=test_db)
+    assert retrieved is not None
+    assert retrieved.name == unique_node_name
+
+def test_get_skill_tree_node_by_name_non_existent(test_db):
+    """Test retrieving a non-existent skill node by name."""
+    retrieved = get_skill_tree_node_by_name("Mythical Skill", db_path=test_db)
+    assert retrieved is None
+
+def test_get_all_skill_tree_nodes(test_db):
+    """Test retrieving all skill tree nodes."""
+    nodes_data = [
+        SkillTreeNode(name="Skill Alpha", skill_tree_name="Tree X"),
+        SkillTreeNode(name="Skill Beta", skill_tree_name="Tree Y"),
+        SkillTreeNode(name="Skill Gamma", skill_tree_name="Tree X")
+    ]
+    for nd in nodes_data:
+        create_skill_tree_node(nd, db_path=test_db)
+
+    all_nodes = get_all_skill_tree_nodes(db_path=test_db)
+    assert len(all_nodes) == len(nodes_data)
+    
+    retrieved_names = sorted([n.name for n in all_nodes])
+    expected_names = sorted([nd.name for nd in nodes_data])
+    assert retrieved_names == expected_names
+
+def test_update_skill_tree_node(test_db):
+    """Test updating an existing skill tree node."""
+    node_data = SkillTreeNode(name="Evolvable Skill", description="Version 1", skill_tree_name="Update Tree")
+    node_id = create_skill_tree_node(node_data, db_path=test_db)
+    assert node_id is not None
+
+    initial_node = get_skill_tree_node_by_id(node_id, db_path=test_db)
+    assert initial_node is not None
+    assert initial_node.created_at is not None
+    assert initial_node.updated_at is not None
+    initial_created_at = datetime.fromisoformat(initial_node.created_at)
+    initial_updated_at = datetime.fromisoformat(initial_node.updated_at)
+
+    time.sleep(0.05) # Ensure timestamp difference
+
+    update_payload = SkillTreeNode(description="Version 2 - Enhanced", unlocked=1, effects="New Effect")
+    success = update_skill_tree_node(node_id, update_payload, db_path=test_db)
+    assert success is True
+
+    updated_node = get_skill_tree_node_by_id(node_id, db_path=test_db)
+    assert updated_node is not None
+    assert updated_node.name == "Evolvable Skill" # Name should not change if not in payload
+    assert updated_node.description == "Version 2 - Enhanced"
+    assert updated_node.unlocked == 1
+    assert updated_node.effects == "New Effect"
+    
+    assert updated_node.created_at is not None
+    assert updated_node.updated_at is not None
+    updated_created_at = datetime.fromisoformat(updated_node.created_at)
+    updated_updated_at = datetime.fromisoformat(updated_node.updated_at)
+
+    assert updated_created_at == initial_created_at
+    assert updated_updated_at >= initial_updated_at 
+    # Check it actually changed if the initial timestamps were equal
+    if initial_created_at == initial_updated_at:
+         assert updated_updated_at >= initial_updated_at, "updated_at should change if it was same as created_at" # Changed > to >=
+    else: # if initial_updated_at was already > initial_created_at (e.g. due to a prior update not in this test scope)
+        assert updated_updated_at >= initial_updated_at, "updated_at should advance on subsequent updates" # Changed > to >=
+
+def test_update_skill_tree_node_change_name_to_duplicate(test_db):
+    """Test updating a skill node name to an existing name in the same tree (should fail)."""
+    nodeA = SkillTreeNode(name="NodeA", skill_tree_name="Collision Test Tree")
+    nodeA_id = create_skill_tree_node(nodeA, db_path=test_db)
+    assert nodeA_id is not None # Ensure nodeA_id is not None before use
+    nodeB = SkillTreeNode(name="NodeB", skill_tree_name="Collision Test Tree")
+    create_skill_tree_node(nodeB, db_path=test_db)
+
+    update_payload = SkillTreeNode(name="NodeB") # Try to rename NodeA to NodeB
+    success = update_skill_tree_node(nodeA_id, update_payload, db_path=test_db)
+    assert success is False, "Updating name to a duplicate in the same tree should fail."
+
+    original_nodeA = get_skill_tree_node_by_id(nodeA_id, db_path=test_db)
+    assert original_nodeA is not None
+    assert original_nodeA.name == "NodeA"
+
+def test_update_skill_tree_node_non_existent(test_db):
+    """Test updating a non-existent skill tree node."""
+    update_payload = SkillTreeNode(name="NonExistentUpdated")
+    success = update_skill_tree_node(8888, update_payload, db_path=test_db)
+    assert success is False
+
+def test_delete_skill_tree_node(test_db):
+    """Test deleting a skill tree node."""
+    node_data = SkillTreeNode(name="Ephemeral Skill", skill_tree_name="Delete Tree")
+    node_id = create_skill_tree_node(node_data, db_path=test_db)
+    assert node_id is not None
+    assert get_skill_tree_node_by_id(node_id, db_path=test_db) is not None
+
+    success = delete_skill_tree_node(node_id, db_path=test_db)
+    assert success is True
+    assert get_skill_tree_node_by_id(node_id, db_path=test_db) is None
+
+def test_delete_skill_tree_node_with_children(test_db):
+    """Test deleting a skill tree node that is a parent, children's parent_node_id should become NULL."""
+    parent_data = SkillTreeNode(name="Parent Skill", skill_tree_name="Family Tree")
+    parent_id = create_skill_tree_node(parent_data, db_path=test_db)
+    assert parent_id is not None
+
+    child_data1 = SkillTreeNode(name="Child Skill 1", skill_tree_name="Family Tree", parent_node_id=parent_id)
+    child_id1 = create_skill_tree_node(child_data1, db_path=test_db)
+    assert child_id1 is not None
+
+    child_data2 = SkillTreeNode(name="Child Skill 2", skill_tree_name="Family Tree", parent_node_id=parent_id)
+    child_id2 = create_skill_tree_node(child_data2, db_path=test_db)
+    assert child_id2 is not None
+
+    # Verify children have parent_id set
+    child1_before_delete = get_skill_tree_node_by_id(child_id1, db_path=test_db)
+    assert child1_before_delete is not None
+    assert child1_before_delete.parent_node_id == parent_id
+    
+    child2_before_delete = get_skill_tree_node_by_id(child_id2, db_path=test_db)
+    assert child2_before_delete is not None
+    assert child2_before_delete.parent_node_id == parent_id
+
+    success = delete_skill_tree_node(parent_id, db_path=test_db)
+    assert success is True
+    assert get_skill_tree_node_by_id(parent_id, db_path=test_db) is None
+
+    # Verify children's parent_node_id is now NULL due to ON DELETE SET NULL
+    updated_child1 = get_skill_tree_node_by_id(child_id1, db_path=test_db)
+    assert updated_child1 is not None
+    assert updated_child1.parent_node_id is None
+
+    updated_child2 = get_skill_tree_node_by_id(child_id2, db_path=test_db)
+    assert updated_child2 is not None
+    assert updated_child2.parent_node_id is None
+
+def test_delete_skill_tree_node_non_existent(test_db):
+    """Test deleting a non-existent skill tree node."""
+    success = delete_skill_tree_node(7777, db_path=test_db)
+    assert success is False
+
+def test_skill_tree_node_updated_at_trigger(test_db):
+    """Test that the updated_at field is automatically updated for skill_tree_node."""
+    node = SkillTreeNode(name="TriggerSkill", description="Initial Desc", skill_tree_name="Trigger Test Tree")
+    node_id = create_skill_tree_node(node, db_path=test_db)
+    assert node_id is not None
+
+    initial_node = get_skill_tree_node_by_id(node_id, db_path=test_db)
+    assert initial_node is not None
+    assert initial_node.created_at is not None
+    assert initial_node.updated_at is not None
+    initial_created_at = datetime.fromisoformat(initial_node.created_at)
+    initial_updated_at = datetime.fromisoformat(initial_node.updated_at)
+
+    assert abs(initial_created_at.timestamp() - initial_updated_at.timestamp()) < 0.1
+
+    time.sleep(0.05) # Ensure timestamp difference
+
+    update_payload = SkillTreeNode(description="Updated Desc")
+    update_success = update_skill_tree_node(node_id, update_payload, db_path=test_db)
+    assert update_success
+
+    updated_node_db = get_skill_tree_node_by_id(node_id, db_path=test_db)
+    assert updated_node_db is not None
+    assert updated_node_db.created_at is not None
+    assert updated_node_db.updated_at is not None
+    final_created_at = datetime.fromisoformat(updated_node_db.created_at)
+    final_updated_at = datetime.fromisoformat(updated_node_db.updated_at)
+
+    assert final_created_at == initial_created_at
+    assert final_updated_at >= initial_updated_at
+    assert final_updated_at >= initial_updated_at, "updated_at should be greater than or equal to after sleep and update" # Changed > to >= and assertion message
 

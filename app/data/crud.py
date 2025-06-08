@@ -1,7 +1,7 @@
 import sqlite3
 from typing import List, Optional
 
-from app.data.models import Resource, CraftingRecipe, RecipeIngredient # Added CraftingRecipe and RecipeIngredient
+from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode # Added SkillTreeNode
 from app.data.database import get_db_connection
 from app.utils.logger import get_logger
 
@@ -571,3 +571,174 @@ def delete_crafting_recipe(recipe_id: int, db_path: Optional[str] = None) -> boo
             conn.close()
 
 logger.info("CRUD functions for CraftingRecipe defined.")
+
+# --- CRUD Operations for SkillTreeNode ---
+
+def _skill_tree_node_to_dict(node: SkillTreeNode, for_update: bool = False) -> dict:
+    data = node.__dict__.copy()
+    data.pop('id', None)
+
+    if for_update:
+        default_instance = node.__class__()
+        update_dict = {}
+        for field_name, current_value in data.items():
+            if field_name not in node.__class__.__dataclass_fields__:
+                continue
+            default_value = getattr(default_instance, field_name)
+            if current_value != default_value:
+                update_dict[field_name] = current_value
+        return update_dict
+    else: # For create
+        return {k: v for k, v in data.items() if v is not None}
+
+def create_skill_tree_node(node: SkillTreeNode, db_path: Optional[str] = None) -> Optional[int]:
+    """Creates a new skill tree node in the database."""
+    data = _skill_tree_node_to_dict(node, for_update=False)
+    if not data.get('name'):
+        logger.error("SkillTreeNode name is required for creation.")
+        return None
+
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        
+        columns = ', '.join(data.keys())
+        placeholders = ':' + ', :'.join(data.keys())
+        sql = f'INSERT INTO skill_tree_node ({columns}) VALUES ({placeholders})'
+        
+        cursor.execute(sql, data)
+        conn.commit()
+        new_id = cursor.lastrowid
+        logger.info(f"SkillTreeNode '{node.name}' created with ID: {new_id} in DB: {db_path if db_path else 'default'}")
+        return new_id
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Failed to create SkillTreeNode '{node.name}' due to integrity error (e.g., duplicate name or FK constraint): {e}")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while creating SkillTreeNode '{node.name}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_skill_tree_node_by_id(node_id: int, db_path: Optional[str] = None) -> Optional[SkillTreeNode]:
+    """Retrieves a skill tree node by its ID."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM skill_tree_node WHERE id = ?", (node_id,))
+        row = cursor.fetchone()
+        if row:
+            logger.debug(f"SkillTreeNode with ID {node_id} found.")
+            return SkillTreeNode(**dict(row))
+        logger.debug(f"SkillTreeNode with ID {node_id} not found.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching SkillTreeNode ID {node_id}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_skill_tree_node_by_name(name: str, db_path: Optional[str] = None) -> Optional[SkillTreeNode]:
+    """Retrieves a skill tree node by its name."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        # Assuming name is unique for SkillTreeNode as well, or this might need adjustment
+        cursor.execute("SELECT * FROM skill_tree_node WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        if row:
+            logger.debug(f"SkillTreeNode with name '{name}' found.")
+            return SkillTreeNode(**dict(row))
+        logger.debug(f"SkillTreeNode with name '{name}' not found.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching SkillTreeNode name '{name}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_all_skill_tree_nodes(db_path: Optional[str] = None) -> List[SkillTreeNode]:
+    """Retrieves all skill tree nodes from the database."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM skill_tree_node ORDER BY skill_tree_name, name") # Order by tree then name
+        rows = cursor.fetchall()
+        nodes = [SkillTreeNode(**dict(row)) for row in rows]
+        logger.debug(f"Retrieved {len(nodes)} skill tree nodes.")
+        return nodes
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching all skill tree nodes: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def update_skill_tree_node(node_id: int, update_data: SkillTreeNode, db_path: Optional[str] = None) -> bool:
+    """Updates an existing skill tree node."""
+    data_to_update = _skill_tree_node_to_dict(update_data, for_update=True)
+
+    if not data_to_update:
+        logger.warning(f"No updatable fields provided for SkillTreeNode ID {node_id}.")
+        return False
+
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        
+        set_clause = ", ".join([f"{key} = :{key}" for key in data_to_update.keys()])
+        sql = f"UPDATE skill_tree_node SET {set_clause} WHERE id = :id"
+        
+        data_to_update['id'] = node_id
+        
+        cursor.execute(sql, data_to_update)
+        conn.commit()
+        
+        if cursor.rowcount > 0:
+            logger.info(f"SkillTreeNode ID {node_id} updated successfully.")
+            return True
+        logger.warning(f"SkillTreeNode ID {node_id} not found or no changes made during update.")
+        return False
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Failed to update SkillTreeNode ID {node_id} due to integrity error: {e}")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Database error while updating SkillTreeNode ID {node_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def delete_skill_tree_node(node_id: int, db_path: Optional[str] = None) -> bool:
+    """Deletes a skill tree node by its ID."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        # Consider implications if other tables reference skill_tree_node via parent_node_id
+        # For now, direct delete. If parent_node_id has FK constraint with SET NULL or CASCADE, it will be handled.
+        # If it's a simple integer and other nodes point to it, they might become orphaned if not handled.
+        # The schema has ON DELETE SET NULL for parent_node_id, so this is fine.
+        cursor.execute("DELETE FROM skill_tree_node WHERE id = ?", (node_id,))
+        conn.commit()
+        if cursor.rowcount > 0:
+            logger.info(f"SkillTreeNode ID {node_id} deleted successfully.")
+            return True
+        logger.warning(f"SkillTreeNode ID {node_id} not found for deletion.")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Database error while deleting SkillTreeNode ID {node_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+logger.info("CRUD functions for SkillTreeNode defined.")
