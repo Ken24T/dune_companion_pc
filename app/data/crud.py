@@ -1,7 +1,7 @@
 import sqlite3
-from typing import List, Optional, Any, Tuple
+from typing import List, Optional
 
-from app.data.models import Resource
+from app.data.models import Resource, CraftingRecipe, RecipeIngredient # Added CraftingRecipe and RecipeIngredient
 from app.data.database import get_db_connection
 from app.utils.logger import get_logger
 
@@ -222,3 +222,100 @@ def delete_resource(resource_id: int, db_path: Optional[str] = None) -> bool:
             conn.close()
 
 logger.info("CRUD functions for Resource defined.")
+
+# --- CRUD Operations for CraftingRecipe ---
+
+def _crafting_recipe_to_dict(recipe: CraftingRecipe, for_update: bool = False) -> dict:
+    data = recipe.__dict__.copy()
+    data.pop('id', None)
+    data.pop('ingredients', None) # Ingredients are handled separately
+
+    if for_update:
+        default_instance = recipe.__class__()
+        update_dict = {}
+        for field_name, current_value in data.items():
+            if field_name not in recipe.__class__.__dataclass_fields__:
+                continue
+            default_value = getattr(default_instance, field_name)
+            if current_value != default_value:
+                update_dict[field_name] = current_value
+        return update_dict
+    else: # For create
+        return {k: v for k, v in data.items() if v is not None}
+
+def create_crafting_recipe(recipe: CraftingRecipe, db_path: Optional[str] = None) -> Optional[int]:
+    """Creates a new crafting recipe and its ingredients in the database.
+    Args:
+        recipe (CraftingRecipe): The CraftingRecipe object to create.
+        db_path (Optional[str]): Path to the database file for testing.
+    Returns:
+        Optional[int]: The ID of the newly created recipe, or None if creation failed.
+    """
+    recipe_data = _crafting_recipe_to_dict(recipe, for_update=False)
+    if not recipe_data.get('name') or not recipe_data.get('output_item_name'):
+        logger.error("Recipe name and output_item_name are required for creation.")
+        return None
+
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        conn.execute("BEGIN") # Start transaction
+
+        # Create the main recipe entry
+        columns = ', '.join(recipe_data.keys())
+        placeholders = ':' + ', :'.join(recipe_data.keys())
+        sql_recipe = f'INSERT INTO crafting_recipe ({columns}) VALUES ({placeholders})'
+        
+        cursor.execute(sql_recipe, recipe_data)
+        recipe_id = cursor.lastrowid
+        if not recipe_id:
+            conn.rollback()
+            logger.error(f"Failed to get lastrowid for recipe '{recipe.name}'.")
+            return None
+
+        # Create recipe ingredients
+        if recipe.ingredients:
+            for ingredient_data_model in recipe.ingredients:
+                # Ensure ingredient_data_model is a RecipeIngredient instance
+                if not isinstance(ingredient_data_model, RecipeIngredient):
+                    logger.error(f"Invalid ingredient data for recipe '{recipe.name}'. Expected RecipeIngredient model.")
+                    conn.rollback()
+                    return None
+
+                # We expect resource_id and quantity to be set on the RecipeIngredient model.
+                # The 'recipe_id' is the one we just obtained.
+                if ingredient_data_model.resource_id == 0 or ingredient_data_model.quantity == 0:
+                     logger.error(f"Invalid ingredient data for recipe '{recipe.name}': resource_id or quantity missing.")
+                     conn.rollback()
+                     return None
+
+                ingredient_sql_data = {
+                    'recipe_id': recipe_id,
+                    'resource_id': ingredient_data_model.resource_id,
+                    'quantity': ingredient_data_model.quantity
+                }
+                
+                ing_columns = ', '.join(ingredient_sql_data.keys())
+                ing_placeholders = ':' + ', :'.join(ingredient_sql_data.keys())
+                sql_ingredient = f'INSERT INTO recipe_ingredient ({ing_columns}) VALUES ({ing_placeholders})'
+                cursor.execute(sql_ingredient, ingredient_sql_data)
+        
+        conn.commit() # Commit transaction
+        logger.info(f"CraftingRecipe '{recipe.name}' created with ID: {recipe_id} in DB: {db_path if db_path else 'default'}")
+        return recipe_id
+    except sqlite3.IntegrityError as e:
+        if conn: 
+            conn.rollback()
+        logger.error(f"Failed to create recipe '{recipe.name}' due to integrity error (e.g., duplicate name or FK constraint): {e}")
+        return None
+    except sqlite3.Error as e:
+        if conn: 
+            conn.rollback()
+        logger.error(f"Database error while creating recipe '{recipe.name}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+logger.info("CRUD functions for CraftingRecipe partially defined.")

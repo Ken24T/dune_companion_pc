@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any # Using Dict and Any for JSON fields for now
+from typing import Optional, List # Using Dict and Any for JSON fields for now
 
 # Using logger from the app
 from app.utils.logger import get_logger
