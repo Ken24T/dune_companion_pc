@@ -12,22 +12,22 @@ DEFAULT_DATABASE_PATH = os.path.join(DEFAULT_DATABASE_DIR, DEFAULT_DATABASE_NAME
 
 def get_db_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Establishes a connection to the SQLite database.
-    Ensures the data directory exists if using the default path.
+    Enables foreign key support for the connection.
     Args:
-        db_path (Optional[str]): Path to the database file. 
-                                 If None, uses DEFAULT_DATABASE_PATH.
+        db_path (Optional[str]): Path to the database file. Uses default if None.
     Returns:
-        sqlite3.Connection: A connection object to the database.
+        sqlite3.Connection: A database connection object.
     """
-    path_to_connect = db_path if db_path else DEFAULT_DATABASE_PATH
+    path_to_use = db_path if db_path else DEFAULT_DATABASE_PATH
     
-    if path_to_connect != ':memory:': # Do not try to create dirs for in-memory DB
-        db_dir = os.path.dirname(path_to_connect)
-        os.makedirs(db_dir, exist_ok=True)
+    # Ensure the directory for the database exists
+    if path_to_use != ':memory:': # Do not try to create dirs for in-memory DB
+        os.makedirs(os.path.dirname(path_to_use), exist_ok=True)
         
-    conn = sqlite3.connect(path_to_connect)
+    conn = sqlite3.connect(path_to_use)
     conn.row_factory = sqlite3.Row  # Access columns by name
-    logger.info(f"Database connection established to {path_to_connect}")
+    conn.execute("PRAGMA foreign_keys = ON;") # Enforce foreign key constraints
+    logger.info(f"Database connection established to {path_to_use}")
     return conn
 
 def initialize_database(db_path: Optional[str] = None):
@@ -193,7 +193,7 @@ def initialize_database(db_path: Optional[str] = None):
                 FOR EACH ROW
                 BEGIN
                     UPDATE {table_name}
-                    SET updated_at = strftime(\'%Y-%m-%d %H:%M:%f\', \'now\')
+                    SET updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now')
                     WHERE id = OLD.id;
                 END;
             ''')

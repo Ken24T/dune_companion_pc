@@ -319,3 +319,255 @@ def create_crafting_recipe(recipe: CraftingRecipe, db_path: Optional[str] = None
             conn.close()
 
 logger.info("CRUD functions for CraftingRecipe partially defined.")
+
+def get_crafting_recipe_by_id(recipe_id: int, db_path: Optional[str] = None) -> Optional[CraftingRecipe]:
+    """Retrieves a crafting recipe by its ID, including its ingredients."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+
+        # Fetch the main recipe
+        cursor.execute("SELECT * FROM crafting_recipe WHERE id = ?", (recipe_id,))
+        recipe_row = cursor.fetchone()
+        if not recipe_row:
+            logger.debug(f"CraftingRecipe with ID {recipe_id} not found.")
+            return None
+
+        recipe_dict = dict(recipe_row)
+        # Placeholder for ingredients, will be populated next
+        recipe_dict['ingredients'] = [] 
+        recipe = CraftingRecipe(**recipe_dict)
+
+        # Fetch ingredients for the recipe
+        # Joining with resource table to get resource_name for convenience
+        cursor.execute("""
+            SELECT ri.id, ri.recipe_id, ri.resource_id, ri.quantity, r.name as resource_name
+            FROM recipe_ingredient ri
+            JOIN resource r ON ri.resource_id = r.id
+            WHERE ri.recipe_id = ?
+        """, (recipe_id,))
+        ingredient_rows = cursor.fetchall()
+        
+        for ing_row in ingredient_rows:
+            recipe.ingredients.append(RecipeIngredient(**dict(ing_row)))
+        
+        logger.debug(f"CraftingRecipe with ID {recipe_id} and {len(recipe.ingredients)} ingredients found.")
+        return recipe
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching recipe ID {recipe_id}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_crafting_recipe_by_name(name: str, db_path: Optional[str] = None) -> Optional[CraftingRecipe]:
+    """Retrieves a crafting recipe by its name, including its ingredients."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+
+        # Fetch the main recipe by name
+        cursor.execute("SELECT * FROM crafting_recipe WHERE name = ?", (name,))
+        recipe_row = cursor.fetchone()
+        if not recipe_row:
+            logger.debug(f"CraftingRecipe with name '{name}' not found.")
+            return None
+
+        recipe_dict = dict(recipe_row)
+        recipe_id = recipe_dict['id'] # Get ID for fetching ingredients
+        recipe_dict['ingredients'] = []
+        recipe = CraftingRecipe(**recipe_dict)
+
+        # Fetch ingredients for the recipe
+        cursor.execute("""
+            SELECT ri.id, ri.recipe_id, ri.resource_id, ri.quantity, r.name as resource_name
+            FROM recipe_ingredient ri
+            JOIN resource r ON ri.resource_id = r.id
+            WHERE ri.recipe_id = ?
+        """, (recipe_id,))
+        ingredient_rows = cursor.fetchall()
+        
+        for ing_row in ingredient_rows:
+            recipe.ingredients.append(RecipeIngredient(**dict(ing_row)))
+
+        logger.debug(f"CraftingRecipe with name '{name}' and {len(recipe.ingredients)} ingredients found.")
+        return recipe
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching recipe name '{name}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_all_crafting_recipes(db_path: Optional[str] = None) -> List[CraftingRecipe]:
+    """Retrieves all crafting recipes, including their ingredients."""
+    conn = None
+    recipes_map = {} # Using a map to efficiently add ingredients to their recipes
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+
+        # Fetch all main recipes
+        cursor.execute("SELECT * FROM crafting_recipe ORDER BY name")
+        recipe_rows = cursor.fetchall()
+
+        for recipe_row in recipe_rows:
+            recipe_dict = dict(recipe_row)
+            recipe_id = recipe_dict['id']
+            recipe_dict['ingredients'] = []
+            recipes_map[recipe_id] = CraftingRecipe(**recipe_dict)
+
+        # Fetch all ingredients and map them to their recipes
+        # Ordering by recipe_id can sometimes be beneficial for processing if needed, but not strictly here
+        cursor.execute("""
+            SELECT ri.id, ri.recipe_id, ri.resource_id, ri.quantity, r.name as resource_name
+            FROM recipe_ingredient ri
+            JOIN resource r ON ri.resource_id = r.id
+            ORDER BY ri.recipe_id
+        """)
+        ingredient_rows = cursor.fetchall()
+
+        for ing_row_dict in ingredient_rows:
+            ing_data = dict(ing_row_dict)
+            recipe_id_for_ingredient = ing_data['recipe_id']
+            if recipe_id_for_ingredient in recipes_map:
+                recipes_map[recipe_id_for_ingredient].ingredients.append(RecipeIngredient(**ing_data))
+            else:
+                logger.warning(f"Found ingredient for non-fetched or non-existent recipe ID {recipe_id_for_ingredient}. Skipping.")
+
+        final_recipes_list = list(recipes_map.values())
+        logger.debug(f"Retrieved {len(final_recipes_list)} crafting recipes.")
+        return final_recipes_list
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching all crafting recipes: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def update_crafting_recipe(recipe_id: int, update_data: CraftingRecipe, db_path: Optional[str] = None) -> bool:
+    """Updates an existing crafting recipe and its ingredients in the database.
+
+    This function handles updates to the main recipe fields and manages changes
+    to its ingredients list by deleting all existing ingredients and then
+    inserting the new list of ingredients from update_data.ingredients.
+
+    Args:
+        recipe_id (int): The ID of the crafting_recipe to update.
+        update_data (CraftingRecipe): A CraftingRecipe object containing the fields to update.
+                                    Scalar fields are updated if they differ from defaults.
+                                    The `ingredients` list in this object will replace all
+                                    existing ingredients for the recipe.
+        db_path (Optional[str]): Path to the database file for testing.
+
+    Returns:
+        bool: True if update was successful, False otherwise.
+    """
+    recipe_fields_to_update = _crafting_recipe_to_dict(update_data, for_update=True)
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        
+        # First, check if the recipe exists
+        cursor.execute("SELECT 1 FROM crafting_recipe WHERE id = ?", (recipe_id,))
+        recipe_exists = cursor.fetchone() is not None
+
+        if not recipe_exists:
+            logger.warning(f"CraftingRecipe ID {recipe_id} not found. Update failed because recipe does not exist.")
+            return False
+
+        conn.execute("BEGIN")  # Start transaction
+
+        if recipe_fields_to_update:
+            set_clause = ", ".join([f"{key} = :{key}" for key in recipe_fields_to_update.keys()])
+            sql_update_recipe = f"UPDATE crafting_recipe SET {set_clause} WHERE id = :id"
+            current_update_data = recipe_fields_to_update.copy()
+            current_update_data['id'] = recipe_id
+            cursor.execute(sql_update_recipe, current_update_data)
+
+        # Update ingredients: delete existing, then insert new ones
+        cursor.execute("DELETE FROM recipe_ingredient WHERE recipe_id = ?", (recipe_id,))
+        deleted_ingredients_count = cursor.rowcount
+        logger.debug(f"Deleted {deleted_ingredients_count} old ingredients for recipe ID {recipe_id}")
+
+        new_ingredients_inserted_count = 0
+        if update_data.ingredients:
+            for ingredient_model in update_data.ingredients:
+                if not isinstance(ingredient_model, RecipeIngredient) or \
+                   ingredient_model.resource_id == 0 or ingredient_model.quantity == 0:
+                    logger.error(f"Invalid ingredient data for recipe ID {recipe_id}. Rolling back.")
+                    conn.rollback()
+                    return False
+                
+                ingredient_sql_data = {
+                    'recipe_id': recipe_id,
+                    'resource_id': ingredient_model.resource_id,
+                    'quantity': ingredient_model.quantity
+                }
+                ing_columns = ', '.join(ingredient_sql_data.keys())
+                ing_placeholders = ':' + ', :'.join(ingredient_sql_data.keys())
+                sql_ingredient = f'INSERT INTO recipe_ingredient ({ing_columns}) VALUES ({ing_placeholders})'
+                cursor.execute(sql_ingredient, ingredient_sql_data)
+                new_ingredients_inserted_count += 1
+        
+        # If no actual changes were made to an existing recipe, we might consider it not a "successful update"
+        # For now, if the recipe exists, and we attempted operations, consider it a success from a transactional POV.
+        # The calling test `test_update_crafting_recipe_non_existent` expects False if ID doesn't exist, which is now handled.
+        # If an update makes no effective change to an *existing* record, it currently returns True.
+        # This is generally acceptable. The main point is that non-existent IDs should fail early.
+
+        conn.commit()
+        logger.info(f"CraftingRecipe ID {recipe_id} processed for update in DB: {db_path if db_path else 'default'}.")
+        # The function should return true if the recipe existed and the transaction was successful.
+        # Whether actual rows changed for main recipe or ingredients can be a more nuanced success metric,
+        # but for this CRUD, existing and committing is success.
+        return True
+
+    except sqlite3.IntegrityError as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Failed to update recipe ID {recipe_id} due to integrity error: {e}")
+        return False
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Database error while updating recipe ID {recipe_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def delete_crafting_recipe(recipe_id: int, db_path: Optional[str] = None) -> bool:
+    """Deletes a crafting recipe from the database by its ID.
+    Associated ingredients are deleted automatically due to ON DELETE CASCADE.
+
+    Args:
+        recipe_id (int): The ID of the crafting_recipe to delete.
+        db_path (Optional[str]): Path to the database file for testing.
+
+    Returns:
+        bool: True if deletion was successful, False otherwise.
+    """
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        # The ON DELETE CASCADE on recipe_ingredient.recipe_id will handle deleting ingredients.
+        cursor.execute("DELETE FROM crafting_recipe WHERE id = ?", (recipe_id,))
+        conn.commit()
+        if cursor.rowcount > 0:
+            logger.info(f"CraftingRecipe ID {recipe_id} and its ingredients deleted successfully.")
+            return True
+        logger.warning(f"CraftingRecipe ID {recipe_id} not found for deletion.")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Database error while deleting recipe ID {recipe_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+logger.info("CRUD functions for CraftingRecipe defined.")
