@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Data
+/data/dune_companion.db
+/data/imported_json/
+
+# Packaging
+/dist/
+/build/
