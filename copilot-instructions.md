@@ -2,6 +2,7 @@
 
 ## Table of Contents
 
+<!--
 * [Project Purpose](#project-purpose)
 * [Architecture Principles](#architecture-principles)
 * [Data Handling](#data-handling)
@@ -20,6 +21,9 @@
 * [DOs for Copilot](#dos-for-copilot)
 * [DON'Ts for Copilot](#donts-for-copilot)
 * [Status](#status)
+-->
+
+
 
 ## Project Purpose
 
