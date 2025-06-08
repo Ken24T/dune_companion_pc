@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from typing import Optional # Added for type hinting
+from typing import Optional, Dict # Added for type hinting
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -9,6 +9,178 @@ logger = get_logger(__name__)
 DEFAULT_DATABASE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
 DEFAULT_DATABASE_NAME = 'dune_companion.db'
 DEFAULT_DATABASE_PATH = os.path.join(DEFAULT_DATABASE_DIR, DEFAULT_DATABASE_NAME)
+
+# Timestamp format for SQLite, ensuring it produces ISO 8601 compatible strings
+# Using a custom format that SQLite can handle and Python can parse
+timestamp_format = "'%Y-%m-%d %H:%M:%f'"
+
+# Default value for created_at and updated_at columns using UTC
+now_utc_default = f"strftime({timestamp_format}, 'now', 'utc')" # Using explicit UTC
+# now_utc_default = f"strftime({timestamp_format}, 'now')" # Using 'now' which is typically UTC in SQLite, simpler
+
+# Trigger for updating updated_at column using UTC
+now_utc_trigger = f"strftime({timestamp_format}, 'now', 'utc')" # Using explicit UTC
+# now_utc_trigger = f"strftime({timestamp_format}, 'now')" # Using 'now'
+
+
+# SQL commands for table creation
+TABLE_DEFINITIONS: Dict[str, str] = {
+    "resource": f"""
+        CREATE TABLE IF NOT EXISTS resource (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            rarity TEXT,
+            category TEXT,
+            source_locations TEXT, -- JSON string for list of locations
+            icon_path TEXT,
+            discovered INTEGER DEFAULT 0, -- Boolean (0 or 1)
+            created_at TEXT DEFAULT ({now_utc_default}),
+            updated_at TEXT DEFAULT ({now_utc_default})
+        )
+    """,
+    "crafting_recipe": f"""
+        CREATE TABLE IF NOT EXISTS crafting_recipe (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            output_item_name TEXT NOT NULL, -- Could be a resource name or a unique item
+            output_quantity INTEGER DEFAULT 1,
+            crafting_time_seconds INTEGER, -- Added missing column
+            required_station TEXT, -- Added this line
+            skill_requirement TEXT, -- Added this line
+            icon_path TEXT, -- Added this line
+            discovered INTEGER DEFAULT 0, -- Added this line
+            created_at TEXT DEFAULT ({now_utc_default}),
+            updated_at TEXT DEFAULT ({now_utc_default})
+        )
+    """,
+    "skill_tree_node": f"""
+        CREATE TABLE IF NOT EXISTS skill_tree_node (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            skill_type TEXT, -- e.g., 'Passive', 'Active', 'Upgrade'
+            unlock_requirements TEXT, -- JSON string for prerequisites (e.g., other skills, level)
+            effects TEXT, -- JSON string describing what the skill does
+            icon_path TEXT,
+            created_at TEXT DEFAULT ({now_utc_default}),
+            updated_at TEXT DEFAULT ({now_utc_default})
+        )
+    """,
+    "base_blueprint": f"""
+        CREATE TABLE IF NOT EXISTS base_blueprint (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            resource_costs TEXT, -- JSON string for resources and quantities
+            construction_time_seconds INTEGER,
+            icon_path TEXT,
+            created_at TEXT DEFAULT ({now_utc_default}),
+            updated_at TEXT DEFAULT ({now_utc_default})
+        )
+    """,
+    "lore_entry": f"""
+        CREATE TABLE IF NOT EXISTS lore_entry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL UNIQUE,
+            content TEXT NOT NULL,
+            category TEXT, -- e.g., 'History', 'Characters', 'Locations'
+            unlock_conditions TEXT, -- How the player discovers this lore
+            created_at TEXT DEFAULT ({now_utc_default}),
+            updated_at TEXT DEFAULT ({now_utc_default})
+        )
+    """,
+    "user_setting": f"""
+        CREATE TABLE IF NOT EXISTS user_setting (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            setting_name TEXT NOT NULL UNIQUE,
+            setting_value TEXT,
+            created_at TEXT DEFAULT ({now_utc_default}),
+            updated_at TEXT DEFAULT ({now_utc_default})
+        )
+    """,
+    "user_note": f"""
+        CREATE TABLE IF NOT EXISTS user_note (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            content TEXT NOT NULL,
+            tags TEXT, -- Comma-separated or JSON
+            created_at TEXT DEFAULT ({now_utc_default}),
+            updated_at TEXT DEFAULT ({now_utc_default})
+        )
+    """,
+    "ai_chat_history": f"""
+        CREATE TABLE IF NOT EXISTS ai_chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            timestamp TEXT DEFAULT ({now_utc_default}),
+            sender TEXT NOT NULL, -- 'user' or 'ai'
+            message TEXT NOT NULL,
+            metadata TEXT -- JSON for any extra info, e.g., context provided
+        )
+    """,
+}
+
+# SQL commands for trigger creation
+TRIGGER_DEFINITIONS: Dict[str, str] = {
+    "resource": f"""
+        CREATE TRIGGER IF NOT EXISTS update_resource_updated_at
+        AFTER UPDATE ON resource
+        FOR EACH ROW
+        BEGIN
+            UPDATE resource SET updated_at = {now_utc_trigger} WHERE id = OLD.id;
+        END;
+    """,
+    "crafting_recipe": f"""
+        CREATE TRIGGER IF NOT EXISTS update_crafting_recipe_updated_at
+        AFTER UPDATE ON crafting_recipe
+        FOR EACH ROW
+        BEGIN
+            UPDATE crafting_recipe SET updated_at = {now_utc_trigger} WHERE id = OLD.id;
+        END;
+    """,
+    "skill_tree_node": f"""
+        CREATE TRIGGER IF NOT EXISTS update_skill_tree_node_updated_at
+        AFTER UPDATE ON skill_tree_node
+        FOR EACH ROW
+        BEGIN
+            UPDATE skill_tree_node SET updated_at = {now_utc_trigger} WHERE id = OLD.id;
+        END;
+    """,
+    "base_blueprint": f"""
+        CREATE TRIGGER IF NOT EXISTS update_base_blueprint_updated_at
+        AFTER UPDATE ON base_blueprint
+        FOR EACH ROW
+        BEGIN
+            UPDATE base_blueprint SET updated_at = {now_utc_trigger} WHERE id = OLD.id;
+        END;
+    """,
+    "lore_entry": f"""
+        CREATE TRIGGER IF NOT EXISTS update_lore_entry_updated_at
+        AFTER UPDATE ON lore_entry
+        FOR EACH ROW
+        BEGIN
+            UPDATE lore_entry SET updated_at = {now_utc_trigger} WHERE id = OLD.id;
+        END;
+    """,
+    "user_setting": f"""
+        CREATE TRIGGER IF NOT EXISTS update_user_setting_updated_at
+        AFTER UPDATE ON user_setting
+        FOR EACH ROW
+        BEGIN
+            UPDATE user_setting SET updated_at = {now_utc_trigger} WHERE id = OLD.id;
+        END;
+    """,
+    "user_note": f"""
+        CREATE TRIGGER IF NOT EXISTS update_user_note_updated_at
+        AFTER UPDATE ON user_note
+        FOR EACH ROW
+        BEGIN
+            UPDATE user_note SET updated_at = {now_utc_trigger} WHERE id = OLD.id;
+        END;
+    """,
+}
 
 def get_db_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Establishes a connection to the SQLite database.
@@ -45,124 +217,35 @@ def initialize_database(db_path: Optional[str] = None):
         # --- Core Entities ---
 
         # Resource Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS resource (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                description TEXT,
-                rarity TEXT,
-                category TEXT, -- e.g., Mineral, Flora, Fauna, Gas, Liquid, Salvage
-                source_locations TEXT, -- JSON list of strings or more structured data
-                icon_path TEXT,
-                discovered INTEGER DEFAULT 0, -- Boolean (0 or 1)
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        cursor.execute(TABLE_DEFINITIONS["resource"])
         logger.info("Table 'resource' checked/created.")
 
         # Crafting Recipe Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS crafting_recipe (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                description TEXT,
-                output_item_name TEXT NOT NULL, -- Could be a resource name or a unique item
-                output_quantity INTEGER DEFAULT 1,
-                crafting_time_seconds INTEGER,
-                required_station TEXT, -- e.g., Workbench, Forge, Chemistry Station
-                skill_requirement TEXT, -- e.g., "Advanced Engineering"
-                icon_path TEXT,
-                discovered INTEGER DEFAULT 0, -- Boolean (0 or 1)
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        cursor.execute(TABLE_DEFINITIONS["crafting_recipe"])
         logger.info("Table 'crafting_recipe' checked/created.")
 
         # Skill Tree Node Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS skill_tree_node (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                description TEXT,
-                skill_tree_name TEXT, -- e.g., Combat, Survival, Crafting
-                parent_node_id INTEGER,
-                unlock_cost TEXT, -- e.g., "5 points", "Requires X item"
-                effects TEXT, -- JSON list of effects or detailed description
-                icon_path TEXT,
-                unlocked INTEGER DEFAULT 0, -- Boolean (0 or 1)
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (parent_node_id) REFERENCES skill_tree_node(id) ON DELETE SET NULL, -- Added ON DELETE SET NULL
-                UNIQUE (name, skill_tree_name) -- Changed name to be unique per skill_tree_name
-            )
-        ''')
+        cursor.execute(TABLE_DEFINITIONS["skill_tree_node"])
         logger.info("Table 'skill_tree_node' checked/created.")
         
         # Base Blueprint Table (Simplified for MVP)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS base_blueprint (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                description TEXT,
-                category TEXT, -- e.g., Structure, Defense, Utility
-                thumbnail_path TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        cursor.execute(TABLE_DEFINITIONS["base_blueprint"])
         logger.info("Table 'base_blueprint' checked/created.")
 
         # Lore / Wiki Entry Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS lore_entry (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL UNIQUE,
-                content_markdown TEXT,
-                category TEXT, -- e.g., Characters, Locations, Factions, History
-                tags TEXT, -- JSON list of strings for search
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        cursor.execute(TABLE_DEFINITIONS["lore_entry"])
         logger.info("Table 'lore_entry' checked/created.")
 
         # User Setting Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_setting (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                setting_key TEXT NOT NULL UNIQUE,
-                setting_value TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        cursor.execute(TABLE_DEFINITIONS["user_setting"])
         logger.info("Table 'user_setting' checked/created.")
 
         # User Note Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_note (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                entity_type TEXT NOT NULL, -- e.g., 'resource', 'crafting_recipe'
-                entity_id INTEGER NOT NULL,
-                note_text TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        cursor.execute(TABLE_DEFINITIONS["user_note"])
         logger.info("Table 'user_note' checked/created.")
         
         # AI Chat History (Optional, basic structure)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ai_chat_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                sender TEXT NOT NULL, -- 'user' or 'ai'
-                message_text TEXT,
-                session_id TEXT -- To group messages if multiple chat sessions are supported
-            )
-        ''')
+        cursor.execute(TABLE_DEFINITIONS["ai_chat_history"])
         logger.info("Table 'ai_chat_history' checked/created.")
 
         # --- Relationship Tables (Many-to-Many) ---
@@ -182,23 +265,10 @@ def initialize_database(db_path: Optional[str] = None):
         logger.info("Table 'recipe_ingredient' checked/created.")
         
         # --- Triggers for updated_at ---
-        tables_with_updated_at = [
-            'resource', 'crafting_recipe', 'skill_tree_node', 
-            'base_blueprint', 'lore_entry', 'user_setting', 'user_note'
-        ]
-        for table_name in tables_with_updated_at:
-            trigger_name = f'update_{table_name}_updated_at'
-            cursor.execute(f'''
-                CREATE TRIGGER IF NOT EXISTS {trigger_name}
-                AFTER UPDATE ON {table_name}
-                FOR EACH ROW
-                BEGIN
-                    UPDATE {table_name}
-                    SET updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now')
-                    WHERE id = OLD.id;
-                END;
-            ''')
-            logger.info(f"Trigger '{trigger_name}' checked/created for table '{table_name}'.")
+        # Use the TRIGGER_DEFINITIONS dictionary to create triggers
+        for table_name, trigger_sql in TRIGGER_DEFINITIONS.items():
+            cursor.execute(trigger_sql)
+            logger.info(f"Trigger for table \'{table_name}\' checked/created using TRIGGER_DEFINITIONS.")
 
         conn.commit()
         logger.info("Database initialization complete. All tables checked/created.")
