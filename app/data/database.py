@@ -1,30 +1,45 @@
 import sqlite3
 import os
+from typing import Optional # Added for type hinting
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-DATABASE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
-DATABASE_NAME = 'dune_companion.db'
-DATABASE_PATH = os.path.join(DATABASE_DIR, DATABASE_NAME)
+# Default database directory and name
+DEFAULT_DATABASE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
+DEFAULT_DATABASE_NAME = 'dune_companion.db'
+DEFAULT_DATABASE_PATH = os.path.join(DEFAULT_DATABASE_DIR, DEFAULT_DATABASE_NAME)
 
-def get_db_connection() -> sqlite3.Connection:
+def get_db_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Establishes a connection to the SQLite database.
-    Ensures the data directory exists.
+    Ensures the data directory exists if using the default path.
+    Args:
+        db_path (Optional[str]): Path to the database file. 
+                                 If None, uses DEFAULT_DATABASE_PATH.
     Returns:
         sqlite3.Connection: A connection object to the database.
     """
-    os.makedirs(DATABASE_DIR, exist_ok=True)
-    conn = sqlite3.connect(DATABASE_PATH)
+    path_to_connect = db_path if db_path else DEFAULT_DATABASE_PATH
+    
+    if path_to_connect != ':memory:': # Do not try to create dirs for in-memory DB
+        db_dir = os.path.dirname(path_to_connect)
+        os.makedirs(db_dir, exist_ok=True)
+        
+    conn = sqlite3.connect(path_to_connect)
     conn.row_factory = sqlite3.Row  # Access columns by name
-    logger.info(f"Database connection established to {DATABASE_PATH}")
+    logger.info(f"Database connection established to {path_to_connect}")
     return conn
 
-def initialize_database():
-    """Initializes the database by creating tables if they don't already exist."""
+def initialize_database(db_path: Optional[str] = None):
+    """Initializes the database by creating tables if they don't already exist.
+    Args:
+        db_path (Optional[str]): Path to the database file. 
+                                 If None, uses DEFAULT_DATABASE_PATH.
+    """
     conn = None
+    actual_db_path = db_path if db_path else DEFAULT_DATABASE_PATH
     try:
-        conn = get_db_connection()
+        conn = get_db_connection(actual_db_path)
         cursor = conn.cursor()
 
         # --- Core Entities ---
@@ -178,7 +193,7 @@ def initialize_database():
                 FOR EACH ROW
                 BEGIN
                     UPDATE {table_name}
-                    SET updated_at = CURRENT_TIMESTAMP
+                    SET updated_at = strftime(\'%Y-%m-%d %H:%M:%f\', \'now\')
                     WHERE id = OLD.id;
                 END;
             ''')
@@ -193,11 +208,11 @@ def initialize_database():
     finally:
         if conn:
             conn.close()
-            logger.info(f"Database connection to {DATABASE_PATH} closed.")
+            logger.info(f"Database connection to {actual_db_path} closed.")
 
 if __name__ == '__main__':
     # This allows running the script directly to initialize the database
     # For example, during initial setup or for testing.
-    logger.info("Initializing database directly from database.py...")
-    initialize_database()
+    logger.info(f"Initializing database directly from database.py at {DEFAULT_DATABASE_PATH}...")
+    initialize_database() # Uses default path
     logger.info("Database initialization process finished.")
