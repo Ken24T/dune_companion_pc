@@ -281,6 +281,18 @@ def initialize_database(db_path: Optional[str] = None):
             conn.close()
             logger.info(f"Database connection to {actual_db_path} closed.")
 
+def get_default_db_path() -> str:
+    """Get the default database path."""
+    return DEFAULT_DATABASE_PATH
+
+
+def database_exists(db_path: Optional[str] = None) -> bool:
+    """Check if the database file exists."""
+    if db_path is None:
+        db_path = DEFAULT_DATABASE_PATH
+    return os.path.exists(db_path)
+
+
 if __name__ == '__main__':
     # This allows running the script directly to initialize the database
     # For example, during initial setup or for testing.
