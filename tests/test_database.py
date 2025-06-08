@@ -2,7 +2,7 @@ import pytest
 import os
 import time # Added for sleep
 from app.data.database import initialize_database, get_db_connection
-from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode # Added SkillTreeNode
+from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode, BaseBlueprint # Added BaseBlueprint
 from app.data.crud import (
     create_resource,
     get_resource_by_id,
@@ -21,7 +21,13 @@ from app.data.crud import (
     get_skill_tree_node_by_name, # Added
     get_all_skill_tree_nodes, # Added
     update_skill_tree_node, # Added
-    delete_skill_tree_node # Added
+    delete_skill_tree_node, # Added
+    create_base_blueprint,
+    get_base_blueprint_by_id,
+    get_base_blueprint_by_name,
+    get_all_base_blueprints,
+    update_base_blueprint,
+    delete_base_blueprint
 )
 from app.utils.logger import shutdown_logging # To close log file handles
 from datetime import datetime
@@ -878,4 +884,190 @@ def test_skill_tree_node_updated_at_trigger(test_db):
     assert final_created_at == initial_created_at
     assert final_updated_at >= initial_updated_at
     assert final_updated_at >= initial_updated_at, "updated_at should be greater than or equal to after sleep and update" # Changed > to >= and assertion message
+
+# --- CRUD Tests for BaseBlueprint ---
+
+def test_create_base_blueprint(test_db):
+    """Test creating a new base blueprint."""
+    blueprint_data = BaseBlueprint(
+        name="Small Hab Unit",
+        description="A basic habitat module.",
+        category="Structures",
+        thumbnail_path="path/to/small_hab.png"
+    )
+    blueprint_id = create_base_blueprint(blueprint_data, db_path=test_db)
+    assert blueprint_id is not None
+
+    retrieved_blueprint = get_base_blueprint_by_id(blueprint_id, db_path=test_db)
+    assert retrieved_blueprint is not None
+    assert retrieved_blueprint.name == "Small Hab Unit"
+    assert retrieved_blueprint.description == "A basic habitat module."
+    assert retrieved_blueprint.category == "Structures"
+    assert retrieved_blueprint.thumbnail_path == "path/to/small_hab.png"
+    assert retrieved_blueprint.created_at is not None
+    assert retrieved_blueprint.updated_at is not None
+
+def test_create_base_blueprint_missing_name(test_db):
+    """Test creating a base blueprint with a missing name (should fail)."""
+    blueprint_data = BaseBlueprint(description="A blueprint without a name.")
+    blueprint_id = create_base_blueprint(blueprint_data, db_path=test_db)
+    assert blueprint_id is None, "Creating a blueprint without a name should fail."
+
+def test_create_base_blueprint_duplicate_name(test_db):
+    """Test creating a base blueprint with a duplicate name (should fail)."""
+    bp1 = BaseBlueprint(name="Duplicate BP Test", category="Test")
+    create_base_blueprint(bp1, db_path=test_db)
+    
+    bp2 = BaseBlueprint(name="Duplicate BP Test", category="Test")
+    bp_id2 = create_base_blueprint(bp2, db_path=test_db)
+    assert bp_id2 is None, "Creating a blueprint with a duplicate name should fail."
+
+def test_get_base_blueprint_by_id(test_db):
+    """Test retrieving a base blueprint by its ID."""
+    blueprint_data = BaseBlueprint(name="Specific BP", category="Retrieval")
+    blueprint_id = create_base_blueprint(blueprint_data, db_path=test_db)
+    assert blueprint_id is not None
+
+    retrieved_blueprint = get_base_blueprint_by_id(blueprint_id, db_path=test_db)
+    assert retrieved_blueprint is not None
+    assert retrieved_blueprint.id == blueprint_id
+    assert retrieved_blueprint.name == "Specific BP"
+
+def test_get_base_blueprint_by_id_non_existent(test_db):
+    """Test retrieving a non-existent base blueprint by ID."""
+    retrieved_blueprint = get_base_blueprint_by_id(12345, db_path=test_db)
+    assert retrieved_blueprint is None
+
+def test_get_base_blueprint_by_name(test_db):
+    """Test retrieving a base blueprint by its name."""
+    blueprint_data = BaseBlueprint(name="Searchable BP", category="Search")
+    create_base_blueprint(blueprint_data, db_path=test_db)
+
+    retrieved_blueprint = get_base_blueprint_by_name("Searchable BP", db_path=test_db)
+    assert retrieved_blueprint is not None
+    assert retrieved_blueprint.name == "Searchable BP"
+
+def test_get_base_blueprint_by_name_non_existent(test_db):
+    """Test retrieving a non-existent base blueprint by name."""
+    retrieved_blueprint = get_base_blueprint_by_name("NonExistentBPName", db_path=test_db)
+    assert retrieved_blueprint is None
+
+def test_get_all_base_blueprints(test_db):
+    """Test retrieving all base blueprints."""
+    blueprints_data = [
+        BaseBlueprint(name="BP Alpha", category="Group A"),
+        BaseBlueprint(name="BP Beta", category="Group B"),
+        BaseBlueprint(name="BP Gamma", category="Group A")
+    ]
+    for bp_data in blueprints_data:
+        create_base_blueprint(bp_data, db_path=test_db)
+
+    all_blueprints = get_all_base_blueprints(db_path=test_db)
+    assert len(all_blueprints) == len(blueprints_data)
+    
+    retrieved_names = sorted([bp.name for bp in all_blueprints])
+    expected_names = sorted([bp_data.name for bp_data in blueprints_data])
+    assert retrieved_names == expected_names
+
+def test_update_base_blueprint(test_db):
+    """Test updating an existing base blueprint."""
+    blueprint_data = BaseBlueprint(name="Evolving BP", description="Version 1.0", category="Evolution")
+    blueprint_id = create_base_blueprint(blueprint_data, db_path=test_db)
+    assert blueprint_id is not None
+
+    initial_bp = get_base_blueprint_by_id(blueprint_id, db_path=test_db)
+    assert initial_bp is not None
+    assert initial_bp.created_at is not None
+    assert initial_bp.updated_at is not None
+    initial_created_at = datetime.fromisoformat(initial_bp.created_at)
+    initial_updated_at = datetime.fromisoformat(initial_bp.updated_at)
+
+    time.sleep(0.05) # Ensure timestamp difference
+
+    update_payload = BaseBlueprint(description="Version 2.0 - Improved", category="Evolution V2")
+    success = update_base_blueprint(blueprint_id, update_payload, db_path=test_db)
+    assert success is True
+
+    updated_blueprint = get_base_blueprint_by_id(blueprint_id, db_path=test_db)
+    assert updated_blueprint is not None
+    assert updated_blueprint.name == "Evolving BP" # Name should not change
+    assert updated_blueprint.description == "Version 2.0 - Improved"
+    assert updated_blueprint.category == "Evolution V2"
+    
+    assert updated_blueprint.created_at is not None
+    assert updated_blueprint.updated_at is not None
+    updated_created_at = datetime.fromisoformat(updated_blueprint.created_at)
+    updated_updated_at = datetime.fromisoformat(updated_blueprint.updated_at)
+
+    assert updated_created_at == initial_created_at
+    assert updated_updated_at >= initial_updated_at
+
+def test_update_base_blueprint_change_name_duplicate(test_db):
+    """Test updating a base blueprint name to an existing name (should fail)."""
+    bpA = BaseBlueprint(name="BlueprintA", category="Collision")
+    bpA_id = create_base_blueprint(bpA, db_path=test_db)
+    assert bpA_id is not None
+    bpB = BaseBlueprint(name="BlueprintB", category="Collision")
+    create_base_blueprint(bpB, db_path=test_db)
+
+    update_payload = BaseBlueprint(name="BlueprintB") # Try to rename BlueprintA to BlueprintB
+    success = update_base_blueprint(bpA_id, update_payload, db_path=test_db)
+    assert success is False, "Updating name to a duplicate should fail."
+
+    original_bpA = get_base_blueprint_by_id(bpA_id, db_path=test_db)
+    assert original_bpA is not None
+    assert original_bpA.name == "BlueprintA"
+
+def test_update_base_blueprint_non_existent(test_db):
+    """Test updating a non-existent base blueprint."""
+    update_payload = BaseBlueprint(name="NonExistentUpdatedBP")
+    success = update_base_blueprint(9999, update_payload, db_path=test_db)
+    assert success is False
+
+def test_delete_base_blueprint(test_db):
+    """Test deleting a base blueprint."""
+    blueprint_data = BaseBlueprint(name="Temporary BP", category="Deletion")
+    blueprint_id = create_base_blueprint(blueprint_data, db_path=test_db)
+    assert blueprint_id is not None
+    assert get_base_blueprint_by_id(blueprint_id, db_path=test_db) is not None
+
+    success = delete_base_blueprint(blueprint_id, db_path=test_db)
+    assert success is True
+    assert get_base_blueprint_by_id(blueprint_id, db_path=test_db) is None
+
+def test_delete_base_blueprint_non_existent(test_db):
+    """Test deleting a non-existent base blueprint."""
+    success = delete_base_blueprint(8888, db_path=test_db)
+    assert success is False
+
+def test_base_blueprint_updated_at_trigger(test_db):
+    """Test that the updated_at field is automatically updated for base_blueprint."""
+    blueprint = BaseBlueprint(name="TriggerBP", description="Initial State", category="Trigger Test")
+    blueprint_id = create_base_blueprint(blueprint, db_path=test_db)
+    assert blueprint_id is not None
+
+    initial_bp = get_base_blueprint_by_id(blueprint_id, db_path=test_db)
+    assert initial_bp is not None
+    assert initial_bp.created_at is not None
+    assert initial_bp.updated_at is not None
+    initial_created_at = datetime.fromisoformat(initial_bp.created_at)
+    initial_updated_at = datetime.fromisoformat(initial_bp.updated_at)
+
+    assert abs(initial_created_at.timestamp() - initial_updated_at.timestamp()) < 0.1
+
+    time.sleep(0.05) 
+
+    update_payload = BaseBlueprint(description="Updated State")
+    update_success = update_base_blueprint(blueprint_id, update_payload, db_path=test_db)
+    assert update_success
+
+    updated_bp_db = get_base_blueprint_by_id(blueprint_id, db_path=test_db)
+    assert updated_bp_db is not None
+    assert updated_bp_db.created_at is not None
+    assert updated_bp_db.updated_at is not None
+    final_created_at = datetime.fromisoformat(updated_bp_db.created_at)
+    final_updated_at = datetime.fromisoformat(updated_bp_db.updated_at)
+
+    assert final_created_at == initial_created_at
+    assert final_updated_at >= initial_updated_at
 

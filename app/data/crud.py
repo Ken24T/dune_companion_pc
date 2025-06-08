@@ -1,7 +1,7 @@
 import sqlite3
 from typing import List, Optional
 
-from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode # Added SkillTreeNode
+from app.data.models import Resource, CraftingRecipe, RecipeIngredient, SkillTreeNode, BaseBlueprint # Added BaseBlueprint
 from app.data.database import get_db_connection
 from app.utils.logger import get_logger
 
@@ -742,3 +742,169 @@ def delete_skill_tree_node(node_id: int, db_path: Optional[str] = None) -> bool:
             conn.close()
 
 logger.info("CRUD functions for SkillTreeNode defined.")
+
+# --- CRUD Operations for BaseBlueprint ---
+
+def _base_blueprint_to_dict(blueprint: BaseBlueprint, for_update: bool = False) -> dict:
+    data = blueprint.__dict__.copy()
+    data.pop('id', None)
+
+    if for_update:
+        default_instance = blueprint.__class__()
+        update_dict = {}
+        for field_name, current_value in data.items():
+            if field_name not in blueprint.__class__.__dataclass_fields__:
+                continue
+            default_value = getattr(default_instance, field_name)
+            if current_value != default_value:
+                update_dict[field_name] = current_value
+        return update_dict
+    else: # For create
+        return {k: v for k, v in data.items() if v is not None}
+
+def create_base_blueprint(blueprint: BaseBlueprint, db_path: Optional[str] = None) -> Optional[int]:
+    """Creates a new base blueprint in the database."""
+    data = _base_blueprint_to_dict(blueprint, for_update=False)
+    if not data.get('name'):
+        logger.error("BaseBlueprint name is required for creation.")
+        return None
+
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        
+        columns = ', '.join(data.keys())
+        placeholders = ':' + ', :'.join(data.keys())
+        sql = f'INSERT INTO base_blueprint ({columns}) VALUES ({placeholders})'
+        
+        cursor.execute(sql, data)
+        conn.commit()
+        new_id = cursor.lastrowid
+        logger.info(f"BaseBlueprint '{blueprint.name}' created with ID: {new_id} in DB: {db_path if db_path else 'default'}")
+        return new_id
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Failed to create BaseBlueprint '{blueprint.name}' due to integrity error (e.g., duplicate name): {e}")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while creating BaseBlueprint '{blueprint.name}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_base_blueprint_by_id(blueprint_id: int, db_path: Optional[str] = None) -> Optional[BaseBlueprint]:
+    """Retrieves a base blueprint by its ID."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM base_blueprint WHERE id = ?", (blueprint_id,))
+        row = cursor.fetchone()
+        if row:
+            logger.debug(f"BaseBlueprint with ID {blueprint_id} found.")
+            return BaseBlueprint(**dict(row))
+        logger.debug(f"BaseBlueprint with ID {blueprint_id} not found.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching BaseBlueprint ID {blueprint_id}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_base_blueprint_by_name(name: str, db_path: Optional[str] = None) -> Optional[BaseBlueprint]:
+    """Retrieves a base blueprint by its name."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM base_blueprint WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        if row:
+            logger.debug(f"BaseBlueprint with name '{name}' found.")
+            return BaseBlueprint(**dict(row))
+        logger.debug(f"BaseBlueprint with name '{name}' not found.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching BaseBlueprint name '{name}': {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_all_base_blueprints(db_path: Optional[str] = None) -> List[BaseBlueprint]:
+    """Retrieves all base blueprints from the database."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM base_blueprint ORDER BY name")
+        rows = cursor.fetchall()
+        blueprints = [BaseBlueprint(**dict(row)) for row in rows]
+        logger.debug(f"Retrieved {len(blueprints)} base blueprints.")
+        return blueprints
+    except sqlite3.Error as e:
+        logger.error(f"Database error while fetching all base blueprints: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def update_base_blueprint(blueprint_id: int, update_data: BaseBlueprint, db_path: Optional[str] = None) -> bool:
+    """Updates an existing base blueprint."""
+    data_to_update = _base_blueprint_to_dict(update_data, for_update=True)
+
+    if not data_to_update:
+        logger.warning(f"No updatable fields provided for BaseBlueprint ID {blueprint_id}.")
+        return False
+
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        
+        set_clause = ", ".join([f"{key} = :{key}" for key in data_to_update.keys()])
+        sql = f"UPDATE base_blueprint SET {set_clause} WHERE id = :id"
+        
+        data_to_update['id'] = blueprint_id
+        
+        cursor.execute(sql, data_to_update)
+        conn.commit()
+        
+        if cursor.rowcount > 0:
+            logger.info(f"BaseBlueprint ID {blueprint_id} updated successfully.")
+            return True
+        logger.warning(f"BaseBlueprint ID {blueprint_id} not found or no changes made during update.")
+        return False
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Failed to update BaseBlueprint ID {blueprint_id} due to integrity error: {e}")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Database error while updating BaseBlueprint ID {blueprint_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def delete_base_blueprint(blueprint_id: int, db_path: Optional[str] = None) -> bool:
+    """Deletes a base blueprint by its ID."""
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM base_blueprint WHERE id = ?", (blueprint_id,))
+        conn.commit()
+        if cursor.rowcount > 0:
+            logger.info(f"BaseBlueprint ID {blueprint_id} deleted successfully.")
+            return True
+        logger.warning(f"BaseBlueprint ID {blueprint_id} not found for deletion.")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Database error while deleting BaseBlueprint ID {blueprint_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+logger.info("CRUD functions for BaseBlueprint defined.")
