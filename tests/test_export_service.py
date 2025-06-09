@@ -13,12 +13,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from app.services.import_export_service import (
-    ImportExportService, 
-    export_all_data, 
-    export_resources, 
-    export_crafting_recipes
-)
+from app.services.import_export_service import ImportExportService
 
 
 class TestExportFunctionality:
@@ -250,7 +245,7 @@ class TestExportFunctionality:
         with tempfile.TemporaryDirectory() as temp_dir:
             export_path = Path(temp_dir) / 'full_export.json'
             
-            result = self.service.export_all_data(export_path, 'json')
+            result = self.service.export_all_data(export_path, 'json')  # MODIFIED: Pass Path object directly
             
             assert result is True
             assert export_path.exists()
@@ -343,53 +338,6 @@ class TestExportFunctionality:
             # Should not crash, may succeed with None values
             result = self.service._export_json(malformed_data, export_path)
             assert isinstance(result, bool)
-
-
-class TestConvenienceExportFunctions:
-    """Test the convenience export functions."""
-    
-    @patch('app.services.import_export_service.ImportExportService')
-    def test_export_all_data_convenience(self, mock_service_class):
-        """Test the export_all_data convenience function."""
-        mock_service = MagicMock()
-        mock_service.export_all_data.return_value = True
-        mock_service_class.return_value = mock_service
-        
-        result = export_all_data('/tmp/test.json', 'json')
-        
-        assert result is True
-        mock_service_class.assert_called_once()
-        mock_service.export_all_data.assert_called_once()
-          # Check the arguments passed to the service
-        call_args = mock_service.export_all_data.call_args
-        # On Windows, paths use backslashes, so normalize for comparison
-        actual_path = str(call_args[0][0]).replace('\\', '/')
-        assert actual_path == '/tmp/test.json'
-        assert call_args[0][1] == 'json'
-    
-    @patch('app.services.import_export_service.ImportExportService')
-    def test_export_resources_convenience(self, mock_service_class):
-        """Test the export_resources convenience function."""
-        mock_service = MagicMock()
-        mock_service.export_resources.return_value = True
-        mock_service_class.return_value = mock_service
-        
-        result = export_resources('/tmp/resources.csv', 'csv')
-        
-        assert result is True
-        mock_service.export_resources.assert_called_once()
-    
-    @patch('app.services.import_export_service.ImportExportService')
-    def test_export_crafting_recipes_convenience(self, mock_service_class):
-        """Test the export_crafting_recipes convenience function."""
-        mock_service = MagicMock()
-        mock_service.export_crafting_recipes.return_value = True
-        mock_service_class.return_value = mock_service
-        
-        result = export_crafting_recipes('/tmp/recipes.md', 'markdown')
-        
-        assert result is True
-        mock_service.export_crafting_recipes.assert_called_once()
 
 
 if __name__ == '__main__':

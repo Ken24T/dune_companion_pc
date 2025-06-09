@@ -11,14 +11,15 @@ import json
 import csv
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Union, Any, Optional
+from typing import Dict, List, Any, Optional
 
 from app.data.database import get_default_db_path
 from app.data.crud import (
     get_all_resources, get_all_crafting_recipes,
-    create_resource, create_crafting_recipe
+    create_resource, update_resource, get_resource_by_name, # Added update_resource, get_resource_by_name
+    create_crafting_recipe, update_crafting_recipe, get_crafting_recipe_by_name # Added update_crafting_recipe, get_crafting_recipe_by_name
 )
-from app.data.models import Resource, CraftingRecipe
+from app.data.models import Resource, CraftingRecipe, RecipeIngredient # Ensure RecipeIngredient is available for recipe import
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -191,6 +192,142 @@ class ImportExportService:
             'updated_at': recipe.updated_at
         }
     
+    # --- START: Moved and Updated Import helper methods ---
+    def _import_resources_data(self, resources_data: List[Dict], merge_strategy: str) -> None:
+        """Import resources data using specified merge strategy."""
+        for resource_data in resources_data:
+            try:
+                resource_name = resource_data.get('name')
+                if not resource_name:
+                    logger.warning(f"Skipping resource import due to missing name: {resource_data}")
+                    continue
+
+                existing_resource = get_resource_by_name(self.db_path, resource_name)
+
+                if existing_resource:
+                    if existing_resource.id is None: # Check if ID is None
+                        logger.warning(f"Skipping update for resource '{resource_name}' due to missing ID in existing record.")
+                        continue
+
+                    if merge_strategy == 'update':
+                        logger.info(f"Updating existing resource: {resource_name}")
+                        update_payload = {k: v for k, v in resource_data.items() if k not in ['id', 'name', 'created_at', 'updated_at']}
+                        update_resource(
+                            db_path=self.db_path,
+                            resource_id=existing_resource.id, 
+                            **update_payload
+                        )
+                    elif merge_strategy == 'replace':
+                        logger.info(f"Replacing existing resource: {resource_name}")
+                        # Delete the old resource
+                        from app.data.crud import delete_resource # Local import to avoid circular dependency if any at module level
+                        delete_resource(self.db_path, existing_resource.id)
+                        # Create the new resource
+                        create_payload = {k: v for k, v in resource_data.items() if k not in ['id', 'created_at', 'updated_at']}
+                        create_resource(
+                            db_path=self.db_path,
+                            **create_payload
+                        )
+                    elif merge_strategy == 'skip':
+                        logger.info(f"Skipping existing resource: {resource_name}")
+                        continue 
+                else: # Resource does not exist, create it
+                    logger.info(f"Creating new resource: {resource_name}")
+                    # Prepare data for create_resource, ensure all required fields are present
+                    # 'name' is already confirmed.
+                    create_payload = {k: v for k, v in resource_data.items() if k not in ['id', 'created_at', 'updated_at']}
+                    create_resource(
+                        db_path=self.db_path,
+                        **create_payload
+                    )
+                    
+            except Exception as e:
+                logger.error(f"Failed to import resource {resource_data.get('name', 'Unknown')}: {e}")
+    
+    def _import_recipes_data(self, recipes_data: List[Dict], merge_strategy: str) -> None:
+        """Import crafting recipes data using specified merge strategy."""
+        for recipe_data in recipes_data:
+            try:
+                recipe_name = recipe_data.get('name')
+                if not recipe_name:
+                    logger.warning(f"Skipping recipe import due to missing name: {recipe_data}")
+                    continue
+
+                existing_recipe = get_crafting_recipe_by_name(self.db_path, recipe_name)
+                
+                parsed_ingredients = []
+                ingredients_input = recipe_data.get('ingredients', [])
+                if ingredients_input:
+                    for ing_data in ingredients_input:
+                        if isinstance(ing_data, RecipeIngredient):
+                            parsed_ingredients.append(ing_data)
+                        elif isinstance(ing_data, dict) and 'resource_id' in ing_data and 'quantity' in ing_data:
+                            if ing_data['resource_id'] is not None:
+                                parsed_ingredients.append(RecipeIngredient(**ing_data))
+                            else:
+                                logger.warning(f"Skipping ingredient with None resource_id for recipe '{recipe_name}': {ing_data}")
+                        elif isinstance(ing_data, dict) and 'name' in ing_data and 'quantity' in ing_data:
+                            resource = get_resource_by_name(self.db_path, ing_data['name'])
+                            if resource and resource.id is not None: 
+                                parsed_ingredients.append(RecipeIngredient(resource_id=resource.id, quantity=ing_data['quantity']))
+                            else:
+                                logger.warning(f"Ingredient resource '{ing_data['name']}' not found or has no ID for recipe '{recipe_name}'. Skipping ingredient.")
+                        else:
+                            logger.warning(f"Invalid ingredient format for recipe '{recipe_name}': {ing_data}")
+
+                if existing_recipe:
+                    if existing_recipe.id is None: 
+                        logger.warning(f"Skipping update for recipe '{recipe_name}' due to missing ID in existing record.")
+                        continue
+                        
+                    if merge_strategy == 'update':
+                        logger.info(f"Updating existing recipe: {recipe_name}")
+                        update_payload = {k: v for k, v in recipe_data.items() if k not in ['id', 'name', 'created_at', 'updated_at', 'ingredients']}
+                        update_crafting_recipe(
+                            db_path=self.db_path,
+                            recipe_id=existing_recipe.id,
+                            ingredients=parsed_ingredients,
+                            **update_payload
+                        )
+                    elif merge_strategy == 'replace':
+                        logger.info(f"Replacing existing recipe: {recipe_name}")
+                        # Delete the old recipe
+                        from app.data.crud import delete_crafting_recipe # Local import
+                        delete_crafting_recipe(self.db_path, existing_recipe.id)
+                        # Create the new recipe
+                        create_payload = {k: v for k, v in recipe_data.items() if k not in ['id', 'created_at', 'updated_at', 'ingredients']}
+                        if 'name' not in create_payload:
+                            create_payload['name'] = recipe_name
+                        if 'output_item_name' not in create_payload or not create_payload['output_item_name']:
+                            logger.warning(f"Recipe '{recipe_name}' missing 'output_item_name' during replace. Skipping creation.")
+                            continue # Skip creating this specific recipe if essential info is missing for new one
+                        create_crafting_recipe(
+                            db_path=self.db_path,
+                            ingredients=parsed_ingredients,
+                            **create_payload
+                        )
+                    elif merge_strategy == 'skip':
+                        logger.info(f"Skipping existing recipe: {recipe_name}")
+                        continue
+                else: # Recipe does not exist, create it
+                    logger.info(f"Creating new recipe: {recipe_name}")
+                    create_payload = {k: v for k, v in recipe_data.items() if k not in ['id', 'created_at', 'updated_at', 'ingredients']}
+                    if 'name' not in create_payload:
+                        create_payload['name'] = recipe_name
+                    if 'output_item_name' not in create_payload or not create_payload['output_item_name']:
+                        logger.warning(f"Recipe '{recipe_name}' missing 'output_item_name'. Skipping creation.")
+                        continue
+
+                    create_crafting_recipe(
+                        db_path=self.db_path,
+                        ingredients=parsed_ingredients,
+                        **create_payload
+                    )
+
+            except Exception as e:
+                logger.error(f"Failed to import recipe {recipe_data.get('name', 'Unknown')}: {e}")
+    # --- END: Moved and Updated Import helper methods ---
+
     # JSON Export/Import
     
     def _export_json(self, data: Dict[str, Any], export_path: Path) -> bool:
@@ -283,9 +420,173 @@ class ImportExportService:
             return False
     
     def _import_markdown(self, import_path: Path, merge_strategy: str) -> bool:
-        """Import data from Markdown file (placeholder implementation)."""
-        logger.warning("Markdown import not yet implemented")
-        return False
+        """Import data from a structured Markdown file."""
+        logger.info(f"Attempting to import Markdown data from: {import_path}")
+        try:
+            with open(import_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            resources_data = []
+            recipes_data = []
+            
+            current_section = None
+            current_item: Optional[Dict[str, Any]] = None
+
+            for line in content.splitlines():
+                line = line.strip()
+                if not line: # Skip empty lines
+                    continue
+
+                if line.startswith("## Resources"):
+                    current_section = "resources"
+                    if current_item: # Save previous item if any
+                        # This case implies we were in a recipe section and found a new Resource section header
+                        # which is unusual for the expected format but handling defensively.
+                        if current_section == "recipes": # This condition will actually be false due to line above
+                            recipes_data.append(current_item) # So this line is unlikely to be hit.
+                    current_item = None
+                    continue
+                elif line.startswith("## Crafting Recipes"):
+                    if current_item and current_section == "resources": # Save last resource item before switching
+                        resources_data.append(current_item)
+                    current_section = "recipes"
+                    current_item = None
+                    continue
+                elif line.startswith("### "):
+                    if current_item:
+                        if current_section == "resources":
+                            resources_data.append(current_item)
+                        elif current_section == "recipes":
+                            recipes_data.append(current_item)
+                    
+                    item_name = line[4:].strip()
+                    current_item = {"name": item_name}
+                    if current_section == "resources" and current_item is not None:
+                        current_item['category'] = None # Initialize category for resources
+                    if current_section == "recipes" and current_item is not None:
+                        current_item['ingredients'] = [] 
+                        current_item['category'] = None # Initialize category for recipes
+                    continue
+
+                elif line.startswith("- ") and current_item is not None:
+                    try:
+                        line_content_after_dash = line[2:]
+                        colon_idx = line_content_after_dash.find(':')
+                        
+                        if colon_idx == -1:
+                            logger.warning(f"Malformed key-value line (no colon found): {line}")
+                            continue
+
+                        raw_key_part = line_content_after_dash[:colon_idx]
+                        value_part = line_content_after_dash[colon_idx+1:].strip()
+
+                        processed_key = raw_key_part.strip()
+
+                        if processed_key.endswith(':'):
+                            processed_key = processed_key[:-1]
+                        
+                        if processed_key.startswith('**') and processed_key.endswith('**') and len(processed_key) >= 4:
+                            processed_key = processed_key[2:-2]
+                        elif processed_key.startswith('*') and processed_key.endswith('*') and len(processed_key) >= 2:
+                            processed_key = processed_key[1:-1]
+                        
+                        final_key = processed_key.strip().lower().replace(' ', '_')
+                        
+                        value = value_part
+
+                        if not final_key:
+                            logger.warning(f"Empty key after processing line: {line} (processed_key was: '{processed_key}')")
+                            continue
+                        
+                        if current_section == "resources":
+                            if final_key in ['category', 'rarity', 'description', 'source_locations', 'icon_path']:
+                                current_item[final_key] = value
+                            elif final_key == 'name': # Name is already set from ###, but allow override if explicitly listed
+                                current_item['name'] = value
+                            elif final_key == 'discovered':
+                                current_item['discovered'] = int(value) if value.isdigit() else 0
+                            # Add other resource fields as needed, with type conversion
+
+                        elif current_section == "recipes":
+                            if final_key == "output": 
+                                parts = value.split('x', 1)
+                                if len(parts) == 2 and parts[0].strip().isdigit():
+                                    current_item['output_quantity'] = int(parts[0].strip())
+                                    current_item['output_item_name'] = parts[1].strip()
+                                else:
+                                    current_item['output_item_name'] = value 
+                                    current_item['output_quantity'] = 1
+                            elif final_key == "station":
+                                current_item['required_station'] = value
+                            elif final_key == "time": 
+                                time_val = value.split()[0]
+                                current_item['crafting_time_seconds'] = int(time_val) if time_val.isdigit() else 0
+                            elif final_key == "description":
+                                current_item['description'] = value
+                            elif final_key == "category":
+                                current_item['category'] = value
+                            elif final_key == "skill_required" or final_key == "skill_requirement":
+                                current_item['skill_requirement'] = value
+                            elif final_key == "icon_path":
+                                current_item['icon_path'] = value
+                            elif final_key == 'discovered':
+                                current_item['discovered'] = int(value) if value.isdigit() else 0
+                            elif final_key == "ingredient" or final_key == "ingredients":
+                                # Improved ingredient parsing: expects "- Ingredient: 2x Iron Ingot" or "- Ingredients: 2x Iron Ingot"
+                                # or "- Ingredient: Spice" (implies quantity 1)
+                                ing_parts = value.split('x', 1)
+                                ing_qty = 1
+                                ing_name = ''
+                                if len(ing_parts) == 2 and ing_parts[0].strip().isdigit():
+                                    ing_qty = int(ing_parts[0].strip())
+                                    ing_name = ing_parts[1].strip()
+                                elif len(ing_parts) == 1:
+                                    ing_name = ing_parts[0].strip()
+                                else:
+                                    logger.warning(f"Could not parse ingredient line format: {line} for recipe {current_item.get('name')}")
+                                    continue
+                                
+                                if ing_name:
+                                    # Ensure 'ingredients' list exists, which it should if current_section is "recipes"
+                                    if 'ingredients' not in current_item:
+                                        current_item['ingredients'] = []
+                                    current_item['ingredients'].append({"name": ing_name, "quantity": ing_qty})
+                                else:
+                                    logger.warning(f"Empty ingredient name from line: {line} for recipe {current_item.get('name')}")
+                            # Add other recipe fields with type conversion
+                    except ValueError as ve:
+                        logger.warning(f"Skipping line due to ValueError: '{line}'. Error: {ve}")
+                    except Exception as e:
+                        logger.warning(f"Skipping line due to parsing error: '{line}'. Error: {e}")
+            
+            # Add the last item being processed
+            if current_item:
+                if current_section == "resources":
+                    resources_data.append(current_item)
+                elif current_section == "recipes":
+                    recipes_data.append(current_item)
+
+            if not resources_data and not recipes_data:
+                logger.warning(f"No data parsed from Markdown file: {import_path}")
+                return False
+
+            if resources_data:
+                logger.info(f"Parsed {len(resources_data)} resources from Markdown.")
+                self._import_resources_data(resources_data, merge_strategy)
+            
+            if recipes_data:
+                logger.info(f"Parsed {len(recipes_data)} recipes from Markdown.")
+                self._import_recipes_data(recipes_data, merge_strategy)
+            
+            logger.info(f"Data imported from Markdown: {import_path}")
+            return True
+            
+        except FileNotFoundError:
+            logger.error(f"Markdown import file not found: {import_path}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to import Markdown: {e}", exc_info=True)
+            return False
     
     def _export_resources_markdown(self, resources: List[Resource], export_path: Path) -> bool:
         """Export resources as Markdown file."""
@@ -410,79 +711,91 @@ class ImportExportService:
             return False
     
     def _import_csv(self, import_path: Path, merge_strategy: str) -> bool:
-        """Import data from CSV files (placeholder implementation)."""
-        logger.warning("CSV import not yet implemented")
-        return False
+        """Import data from CSV files within a specified directory."""
+        logger.info(f"Attempting to import CSV data from directory: {import_path}")
+        if not import_path.is_dir():
+            logger.error(f"CSV import path must be a directory: {import_path}")
+            return False
+
+        resources_file = import_path / 'resources.csv'
+        recipes_file = import_path / 'crafting_recipes.csv'
+
+        imported_something = False
+        overall_success = True # Track if any individual import step fails
+
+        if resources_file.exists():
+            try:
+                with open(resources_file, 'r', encoding='utf-8', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    resources_data = []
+                    for row in reader:
+                        # Basic type conversion - can be expanded
+                        row['discovered'] = int(row.get('discovered', 0)) if row.get('discovered') else 0
+                        if 'id' in row: # remove id from dict as create_resource does not take it
+                            del row['id']
+                        resources_data.append(row)
+                
+                if resources_data:
+                    self._import_resources_data(resources_data, merge_strategy)
+                    logger.info(f"Successfully processed resources from {resources_file}")
+                    imported_something = True
+                else:
+                    logger.info(f"No data found in {resources_file}")
+
+            except Exception as e:
+                logger.error(f"Failed to import resources from CSV {resources_file}: {e}")
+                overall_success = False # Mark as failed but continue to recipes
+        else:
+            logger.warning(f"Resources CSV file not found: {resources_file}")
+
+        if recipes_file.exists():
+            try:
+                with open(recipes_file, 'r', encoding='utf-8', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    recipes_data = []
+                    for row in reader:
+                        # Basic type conversion
+                        row['output_quantity'] = int(row.get('output_quantity', 1)) if row.get('output_quantity') else 1
+                        row['crafting_time_seconds'] = int(row.get('crafting_time_seconds', 0)) if row.get('crafting_time_seconds') else 0
+                        row['discovered'] = int(row.get('discovered', 0)) if row.get('discovered') else 0
+                        
+                        ingredients_str = row.get('ingredients')
+                        if ingredients_str:
+                            try:
+                                # Ensure ingredients are parsed correctly, especially if they are simple lists of dicts
+                                ingredients_parsed = json.loads(ingredients_str)
+                                # The create_crafting_recipe expects a list of RecipeIngredient objects or dicts
+                                # that can be converted. If CSV stores them as dicts, this should be fine.
+                                row['ingredients'] = ingredients_parsed
+                            except json.JSONDecodeError:
+                                logger.warning(f"Could not parse ingredients JSON for recipe {row.get('name')}: {ingredients_str}")
+                                row['ingredients'] = [] 
+                        else:
+                            row['ingredients'] = []
+                        
+                        if 'id' in row: 
+                            del row['id']
+                        recipes_data.append(row)
+
+                if recipes_data:
+                    self._import_recipes_data(recipes_data, merge_strategy)
+                    logger.info(f"Successfully processed recipes from {recipes_file}")
+                    imported_something = True
+                else:
+                    logger.info(f"No data found in {recipes_file}")
+
+            except Exception as e:
+                logger.error(f"Failed to import recipes from CSV {recipes_file}: {e}")
+                overall_success = False
+        else:
+            logger.warning(f"Crafting recipes CSV file not found: {recipes_file}")
+        
+        if not imported_something and overall_success: # if nothing was imported but no errors occurred
+            logger.info(f"No new data to import from CSV files in {import_path}")
+            # Return True because the operation completed without error, even if no data changed.
+            # If it's preferred to return False if no files were found/processed, adjust this logic.
+            return True 
+
+        return overall_success and imported_something
     
     # Import helper methods
-    
-    def _import_resources_data(self, resources_data: List[Dict], merge_strategy: str) -> None:
-        """Import resources data using specified merge strategy."""
-        for resource_data in resources_data:
-            try:
-                if merge_strategy == 'update':
-                    # Try to create, will skip if exists due to unique constraints
-                    create_resource(
-                        db_path=self.db_path,
-                        name=resource_data['name'],
-                        description=resource_data.get('description'),
-                        rarity=resource_data.get('rarity'),
-                        category=resource_data.get('category'),
-                        source_locations=resource_data.get('source_locations'),
-                        icon_path=resource_data.get('icon_path'),
-                        discovered=resource_data.get('discovered', 0)
-                    )
-                # Other merge strategies can be implemented as needed
-                    
-            except Exception as e:
-                logger.error(f"Failed to import resource {resource_data.get('name', 'Unknown')}: {e}")
-    
-    def _import_recipes_data(self, recipes_data: List[Dict], merge_strategy: str) -> None:
-        """Import crafting recipes data using specified merge strategy."""
-        for recipe_data in recipes_data:
-            try:
-                if merge_strategy == 'update':
-                    # Try to create, will skip if exists due to unique constraints
-                    create_crafting_recipe(
-                        db_path=self.db_path,
-                        name=recipe_data['name'],
-                        output_item_name=recipe_data.get('output_item_name', ''),
-                        output_quantity=recipe_data.get('output_quantity', 1),
-                        description=recipe_data.get('description'),
-                        crafting_time_seconds=recipe_data.get('crafting_time_seconds'),
-                        required_station=recipe_data.get('required_station'),
-                        skill_requirement=recipe_data.get('skill_requirement'),
-                        icon_path=recipe_data.get('icon_path'),
-                        discovered=recipe_data.get('discovered', 0)
-                        # Note: ingredients handling would need more complex logic
-                    )
-                # Other merge strategies can be implemented as needed
-                    
-            except Exception as e:
-                logger.error(f"Failed to import recipe {recipe_data.get('name', 'Unknown')}: {e}")
-
-
-# Convenience functions for external use
-
-def export_all_data(export_path: Union[str, Path], format_type: str = 'json') -> bool:
-    """Convenience function to export all data."""
-    service = ImportExportService()
-    return service.export_all_data(Path(export_path), format_type)
-
-
-def import_data(import_path: Union[str, Path], format_type: str, merge_strategy: str = 'update') -> bool:
-    """Convenience function to import data."""
-    service = ImportExportService()
-    return service.import_data(Path(import_path), format_type, merge_strategy)
-
-
-def export_resources(export_path: Union[str, Path], format_type: str = 'json') -> bool:
-    """Convenience function to export resources only."""
-    service = ImportExportService()
-    return service.export_resources(Path(export_path), format_type)
-
-
-def export_crafting_recipes(export_path: Union[str, Path], format_type: str = 'json') -> bool:
-    """Convenience function to export crafting recipes only."""
-    service = ImportExportService()
-    return service.export_crafting_recipes(Path(export_path), format_type)

@@ -441,23 +441,33 @@ def setup_common_resources_for_recipes(test_db):
     ]
     
     created_or_fetched_resources = {}
-    
+
     for res_data in resources_to_create_and_fetch:
-        resource = create_resource(db_path=test_db, name=res_data["name"], category=res_data["category"])
-        if resource is None: 
-            logger.warning(f"Resource '{res_data['name']}' creation returned None (likely exists), attempting to fetch.")
-            resource = get_resource_by_name(db_path=test_db, name=res_data["name"])
+        # Try to fetch the resource first
+        resource = get_resource_by_name(db_path=test_db, name=res_data["name"])
         
         if resource is None:
-            # This case should ideally not be hit if the DB is clean or the item truly exists.
-            # Logging an error here helps diagnose if there's a deeper issue.
-            logger.error(f"Critical error: Failed to create AND fetch resource: {res_data['name']}. DB state is unexpected.")
-
-        assert resource is not None, f"Failed to create or fetch resource: {res_data['name']}"
-        assert resource.id is not None, f"Resource '{res_data['name']}' has no ID after creation/fetching."
+            # Resource not found, try to create it
+            logger.info(f"Resource '{res_data['name']}' not found by name, attempting to create.")
+            resource = create_resource(
+                db_path=test_db,
+                name=res_data["name"],
+                category=res_data["category"]
+                # Add other fields from res_data if necessary for creation
+            )
+            if resource is None:
+                # Creation also failed
+                pytest.fail(
+                    f"Failed to create resource '{res_data['name']}' after it was not found. "
+                    f"create_resource returned None."
+                )
+        else:
+            logger.info(f"Resource '{res_data['name']}' fetched successfully (already existed).")
+        
+        # At this point, 'resource' must be a valid Resource object.
+        assert resource is not None, f"Critical error: Resource '{res_data['name']}' is None after fetch/create logic."
         created_or_fetched_resources[res_data["key"]] = resource
-        logger.info(f"Ensured resource '{res_data['name']}' (ID: {resource.id}) is available for the test.")
-            
+    
     return created_or_fetched_resources
 
 # --- CRUD Tests for CraftingRecipe ---
@@ -563,195 +573,247 @@ class TestCraftingRecipeCRUD: # Group tests in a class
         resources = setup_common_resources_for_recipes
         assert resources["iron_ingot"].id is not None
 
+        recipe_name = "Searchable Recipe"
         created_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
             db_path=test_db,
-            name="Searchable Recipe", 
+            name=recipe_name,
             output_item_name="Searchable Output",
             ingredients=[RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=3)]
         )
-        assert created_recipe is not None
+        assert created_recipe is not None # Assert creation
+        assert created_recipe.id is not None
 
-        retrieved: Optional[CraftingRecipe] = get_crafting_recipe_by_name(db_path=test_db, name="Searchable Recipe")
-        assert retrieved is not None
-        assert retrieved.name == "Searchable Recipe"
-        assert len(retrieved.ingredients) == 1
-        assert retrieved.ingredients[0].resource_id == resources["iron_ingot"].id
-        assert retrieved.ingredients[0].resource_name == "Iron Ingot"
+        # Retrieve by name
+        retrieved_recipe: Optional[CraftingRecipe] = get_crafting_recipe_by_name(db_path=test_db, name=recipe_name)
+        assert retrieved_recipe is not None
+        assert retrieved_recipe.id == created_recipe.id
+        assert retrieved_recipe.name == recipe_name
+        assert retrieved_recipe.output_item_name == "Searchable Output"
+        assert len(retrieved_recipe.ingredients) == 1
+        assert retrieved_recipe.ingredients[0].resource_id == resources["iron_ingot"].id
+        assert retrieved_recipe.ingredients[0].quantity == 3
+        assert retrieved_recipe.ingredients[0].resource_name == "Iron Ingot"
+
 
     def test_get_crafting_recipe_by_name_non_existent(self, test_db):
-        """Test retrieving non-existent recipe by name."""
-        retrieved: Optional[CraftingRecipe] = get_crafting_recipe_by_name(db_path=test_db, name="Imaginary Recipe")
-        assert retrieved is None
+        """Test retrieving a non-existent recipe by name."""
+        retrieved_recipe: Optional[CraftingRecipe] = get_crafting_recipe_by_name(db_path=test_db, name="Surely This Recipe Does Not Exist")
+        assert retrieved_recipe is None
+        
 
     def test_get_all_crafting_recipes(self, test_db, setup_common_resources_for_recipes):
         """Test retrieving all crafting recipes."""
         resources = setup_common_resources_for_recipes
-        assert resources["iron_ingot"].id is not None
-        assert resources["copper_wire"].id is not None
+        iron_id = resources["iron_ingot"].id
+        copper_id = resources["copper_wire"].id
+        plastic_id = resources["plastic_casing"].id
+        assert iron_id is not None and copper_id is not None and plastic_id is not None
 
-        create_crafting_recipe(db_path=test_db, name="Recipe A", output_item_name="Item A", ingredients=[
-            RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=1)
-        ])
-        create_crafting_recipe(db_path=test_db, name="Recipe B", output_item_name="Item B", ingredients=[
-            RecipeIngredient(resource_id=resources["copper_wire"].id, quantity=2)
-        ])
+        # Create some recipes
+        recipe1_data = {
+            "name": "Recipe Alpha",
+            "output_item_name": "Output A",
+            "ingredients": [RecipeIngredient(resource_id=iron_id, quantity=1)]
+        }
+        recipe2_data = {
+            "name": "Recipe Beta",
+            "output_item_name": "Output B",
+            "ingredients": [
+                RecipeIngredient(resource_id=copper_id, quantity=2),
+                RecipeIngredient(resource_id=plastic_id, quantity=1)
+            ]
+        }
+        recipe3_data = { # A recipe with no ingredients
+            "name": "Recipe Gamma",
+            "output_item_name": "Output C",
+            "ingredients": []
+        }
 
+        created_recipe1 = create_crafting_recipe(db_path=test_db, **recipe1_data)
+        created_recipe2 = create_crafting_recipe(db_path=test_db, **recipe2_data)
+        created_recipe3 = create_crafting_recipe(db_path=test_db, **recipe3_data)
+
+        assert created_recipe1 is not None
+        assert created_recipe2 is not None
+        assert created_recipe3 is not None
+        
         all_recipes: List[CraftingRecipe] = get_all_crafting_recipes(db_path=test_db)
-        assert len(all_recipes) == 2
-        recipe_names = sorted([r.name for r in all_recipes])
-        assert recipe_names == ["Recipe A", "Recipe B"]
+        
+        assert len(all_recipes) == 3 
 
-        # Check ingredients are populated for one of them
-        recipe_a = next((r for r in all_recipes if r.name == "Recipe A"), None)
-        assert recipe_a is not None
-        assert len(recipe_a.ingredients) == 1
-        assert recipe_a.ingredients[0].resource_id == resources["iron_ingot"].id
-        assert recipe_a.ingredients[0].resource_name == "Iron Ingot"
+        retrieved_names = sorted([r.name for r in all_recipes])
+        expected_names = sorted([recipe1_data["name"], recipe2_data["name"], recipe3_data["name"]])
+        assert retrieved_names == expected_names
+
+        # Optional: Deeper checks for each recipe
+        for recipe in all_recipes:
+            if recipe.name == recipe1_data["name"]:
+                assert recipe.output_item_name == recipe1_data["output_item_name"]
+                assert len(recipe.ingredients) == 1
+                assert recipe.ingredients[0].resource_id == iron_id
+            elif recipe.name == recipe2_data["name"]:
+                assert recipe.output_item_name == recipe2_data["output_item_name"]
+                assert len(recipe.ingredients) == 2
+            elif recipe.name == recipe3_data["name"]:
+                assert recipe.output_item_name == recipe3_data["output_item_name"]
+                assert len(recipe.ingredients) == 0
 
     def test_update_crafting_recipe_fields_and_ingredients(self, test_db, setup_common_resources_for_recipes):
-        """Test updating recipe fields and its ingredients list."""
+        """Test updating a recipe's fields and its ingredients."""
         resources = setup_common_resources_for_recipes
-        assert resources["iron_ingot"].id is not None
-        assert resources["copper_wire"].id is not None
-        assert resources["plastic_casing"].id is not None
+        iron_id = resources["iron_ingot"].id
+        copper_id = resources["copper_wire"].id
+        plastic_id = resources["plastic_casing"].id
+        assert iron_id is not None and copper_id is not None and plastic_id is not None
 
-        created_initial_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
+        # 1. Create initial recipe
+        initial_recipe_obj = create_crafting_recipe(
             db_path=test_db,
             name="Updatable Gadget",
-            description="Version 1.0",
-            output_item_name="UG-1",
+            output_item_name="Gadget Upsilon",
             output_quantity=1,
+            description="An initial gadget.",
             ingredients=[
-                RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=1)
+                RecipeIngredient(resource_id=iron_id, quantity=2),
+                RecipeIngredient(resource_id=copper_id, quantity=3)
             ]
         )
-        assert created_initial_recipe is not None and created_initial_recipe.id is not None
-        recipe_id: int = created_initial_recipe.id
+        assert initial_recipe_obj is not None
+        assert initial_recipe_obj.id is not None
+        recipe_id = initial_recipe_obj.id
+
+        # Fetch to get accurate timestamps as stored in DB
+        initial_recipe_db = get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id)
+        assert initial_recipe_db is not None
+        assert initial_recipe_db.created_at is not None
+        initial_created_at_dt = parse_sqlite_timestamp(initial_recipe_db.created_at)
         
-        time.sleep(0.05) # Ensure timestamp difference
+        time.sleep(0.05) # Ensure timestamp difference for updated_at
 
-        updated_recipe_obj: Optional[CraftingRecipe] = update_crafting_recipe(
-            db_path=test_db, 
-            recipe_id=recipe_id,
-            description="Version 2.0 with more features", 
-            output_quantity=2, 
-            ingredients=[
-                RecipeIngredient(resource_id=resources["copper_wire"].id, quantity=10),
-                RecipeIngredient(resource_id=resources["plastic_casing"].id, quantity=3)
-            ]
-        )
-        assert updated_recipe_obj is not None
+        # 2. Update the recipe
+        updated_description = "An updated, more complex gadget."
+        updated_output_quantity = 2
+        updated_ingredients = [
+            RecipeIngredient(resource_id=copper_id, quantity=5), # Change quantity
+            RecipeIngredient(resource_id=plastic_id, quantity=1) # Add new ingredient, remove iron
+        ]
 
-        fetched_updated_recipe = get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id)
-        assert fetched_updated_recipe is not None
-        assert fetched_updated_recipe.name == "Updatable Gadget" 
-        assert fetched_updated_recipe.description == "Version 2.0 with more features"
-        assert fetched_updated_recipe.output_item_name == "UG-1" 
-        assert fetched_updated_recipe.output_quantity == 2
-        assert len(fetched_updated_recipe.ingredients) == 2
-
-        ing_copper = next((ing for ing in fetched_updated_recipe.ingredients if ing.resource_id == resources["copper_wire"].id), None)
-        ing_plastic = next((ing for ing in fetched_updated_recipe.ingredients if ing.resource_id == resources["plastic_casing"].id), None)
-
-        assert ing_copper is not None and ing_copper.quantity == 10 and ing_copper.resource_name == "Copper Wire"
-        assert ing_plastic is not None and ing_plastic.quantity == 3 and ing_plastic.resource_name == "Plastic Casing"
-        assert fetched_updated_recipe.created_at is not None and fetched_updated_recipe.updated_at is not None
-        # Ensure the format string matches the one used in database.py
-        created_at_dt = parse_sqlite_timestamp(fetched_updated_recipe.created_at)
-        updated_at_dt = parse_sqlite_timestamp(fetched_updated_recipe.updated_at)
-        assert updated_at_dt > created_at_dt
-
-    def test_delete_crafting_recipe_and_ingredients(self, test_db, setup_common_resources_for_recipes):
-        """Test deleting a crafting recipe and its ingredients (via CASCADE)."""
-        resources = setup_common_resources_for_recipes
-        assert resources["copper_wire"].id is not None
-
-        created_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
+        update_result = update_crafting_recipe(
             db_path=test_db,
-            name="To Be Deleted", 
-            output_item_name="TBD-1",
-            ingredients=[RecipeIngredient(resource_id=resources["copper_wire"].id, quantity=3)]
+            recipe_id=recipe_id,
+            description=updated_description,
+            output_quantity=updated_output_quantity,
+            ingredients=updated_ingredients
         )
-        assert created_recipe is not None and created_recipe.id is not None
-        recipe_id: int = created_recipe.id
+        assert update_result is not None
+
+        # 3. Retrieve and verify
+        final_recipe = get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id)
+        assert final_recipe is not None
+        assert final_recipe.name == "Updatable Gadget" # Unchanged
+        assert final_recipe.output_item_name == "Gadget Upsilon" # Unchanged
+        assert final_recipe.description == updated_description
+        assert final_recipe.output_quantity == updated_output_quantity
         
+        assert len(final_recipe.ingredients) == 2
+        ing_copper = next((ing for ing in final_recipe.ingredients if ing.resource_id == copper_id), None)
+        ing_plastic = next((ing for ing in final_recipe.ingredients if ing.resource_id == plastic_id), None)
+        ing_iron = next((ing for ing in final_recipe.ingredients if ing.resource_id == iron_id), None)
+
+        assert ing_iron is None # Iron was removed
+        assert ing_copper is not None
+        assert ing_copper.quantity == 5
+        assert ing_copper.resource_name == "Copper Wire"
+        assert ing_plastic is not None
+        assert ing_plastic.quantity == 1
+        assert ing_plastic.resource_name == "Plastic Casing"
+
+        # Check timestamps
+        assert final_recipe.created_at is not None and final_recipe.updated_at is not None
+        final_created_at_dt = parse_sqlite_timestamp(final_recipe.created_at)
+        final_updated_at_dt = parse_sqlite_timestamp(final_recipe.updated_at)
+        
+        assert final_created_at_dt == initial_created_at_dt # created_at should not change
+        assert final_updated_at_dt > initial_created_at_dt # updated_at should be greater
+
+    def test_delete_crafting_recipe(self, test_db, setup_common_resources_for_recipes):
+        """Test deleting a crafting recipe."""
+        resources = setup_common_resources_for_recipes
+        iron_id = resources["iron_ingot"].id
+        assert iron_id is not None
+
+        recipe_to_delete = create_crafting_recipe(
+            db_path=test_db,
+            name="Deletable Recipe",
+            output_item_name="Output Del",
+            ingredients=[RecipeIngredient(resource_id=iron_id, quantity=1)]
+        )
+        assert recipe_to_delete is not None
+        assert recipe_to_delete.id is not None
+        recipe_id = recipe_to_delete.id
+
+        # Verify it exists
         assert get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id) is not None
 
-        # Verify ingredients exist before delete
-        conn = get_db_connection(db_path=test_db)
-        assert conn is not None
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM recipe_ingredient WHERE recipe_id = ?", (recipe_id,))
-        ingredient_count_before_tuple = cursor.fetchone()
-        assert ingredient_count_before_tuple is not None
-        ingredient_count_before = ingredient_count_before_tuple[0]
-        conn.close()
-        assert ingredient_count_before == 1
+        delete_success = delete_crafting_recipe(db_path=test_db, recipe_id=recipe_id)
+        assert delete_success is True
 
-        success: bool = delete_crafting_recipe(db_path=test_db, recipe_id=recipe_id)
-        assert success is True
+        # Verify it's deleted
         assert get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id) is None
 
-        # Verify ingredients are deleted due to CASCADE
-        conn = get_db_connection(db_path=test_db)
-        assert conn is not None
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM recipe_ingredient WHERE recipe_id = ?", (recipe_id,))
-        ingredient_count_after_tuple = cursor.fetchone()
-        assert ingredient_count_after_tuple is not None
-        ingredient_count_after = ingredient_count_after_tuple[0]
-        conn.close()
-        assert ingredient_count_after == 0
-
     def test_delete_crafting_recipe_non_existent(self, test_db):
-        """Test deleting a non-existent recipe."""
-        success = delete_crafting_recipe(db_path=test_db, recipe_id=666)
-        assert success is False
+        """Test deleting a non-existent crafting recipe."""
+        delete_success = delete_crafting_recipe(db_path=test_db, recipe_id=99999) # Assuming this ID won't exist
+        assert delete_success is False
 
     def test_crafting_recipe_updated_at_trigger(self, test_db, setup_common_resources_for_recipes):
-        """Test the updated_at trigger for crafting_recipe table."""
+        """Test that the updated_at field for crafting_recipe is automatically updated by its trigger."""
         resources = setup_common_resources_for_recipes
-        assert resources["iron_ingot"].id is not None
+        iron_id = resources["iron_ingot"].id
+        assert iron_id is not None
 
-        created_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
+        initial_recipe_obj = create_crafting_recipe(
             db_path=test_db,
             name="Trigger Test Recipe",
-            description="Initial Description",
-            output_item_name="TTR-1",
-            output_quantity=1,
-            ingredients=[RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=1)]
+            output_item_name="Trigger Output",
+            description="Initial description for trigger.",
+            ingredients=[RecipeIngredient(resource_id=iron_id, quantity=1)]
         )
-        assert created_recipe is not None and created_recipe.id is not None
-        recipe_id: int = created_recipe.id
+        assert initial_recipe_obj is not None
+        assert initial_recipe_obj.id is not None
+        recipe_id = initial_recipe_obj.id
 
-        initial_recipe_db: Optional[CraftingRecipe] = get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id)
-        assert initial_recipe_db is not None
-        assert initial_recipe_db.created_at is not None and initial_recipe_db.updated_at is not None
+        # Get initial timestamps from DB
+        db_recipe_initial = get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id)
+        assert db_recipe_initial is not None
+        assert db_recipe_initial.created_at is not None and db_recipe_initial.updated_at is not None
+        
+        initial_created_at_dt = parse_sqlite_timestamp(db_recipe_initial.created_at)
+        initial_updated_at_dt = parse_sqlite_timestamp(db_recipe_initial.updated_at)
+        assert abs(initial_created_at_dt.timestamp() - initial_updated_at_dt.timestamp()) < 0.1 
 
-        initial_created_at = parse_sqlite_timestamp(initial_recipe_db.created_at)
-        initial_updated_at = parse_sqlite_timestamp(initial_recipe_db.updated_at)
-        assert abs(initial_created_at.timestamp() - initial_updated_at.timestamp()) < 0.1 # Should be very close
+        time.sleep(0.05) # Ensure a time difference for the update
 
-        time.sleep(0.05)
-
-        update_success_obj: Optional[CraftingRecipe] = update_crafting_recipe(
+        # Update the recipe
+        update_success_obj = update_crafting_recipe(
             db_path=test_db,
             recipe_id=recipe_id,
-            description="Updated Description"
+            description="Updated description for trigger test."
         )
         assert update_success_obj is not None
 
-        updated_recipe_db: Optional[CraftingRecipe] = get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id)
-        assert updated_recipe_db is not None, "Updated recipe fetch failed in trigger test."
-        assert updated_recipe_db.created_at is not None and updated_recipe_db.updated_at is not None
-        # Ensure the format string matches the one used in database.py
-        final_created_at = parse_sqlite_timestamp(updated_recipe_db.created_at)
-        final_updated_at = parse_sqlite_timestamp(updated_recipe_db.updated_at)
+        # Get updated recipe and check timestamps
+        db_recipe_updated = get_crafting_recipe_by_id(db_path=test_db, recipe_id=recipe_id)
+        assert db_recipe_updated is not None
+        assert db_recipe_updated.created_at is not None and db_recipe_updated.updated_at is not None
 
-        assert final_created_at == initial_created_at, "created_at should not change on update"
-        assert final_updated_at > initial_updated_at, "updated_at should be greater than initial updated_at after update"
+        final_created_at_dt = parse_sqlite_timestamp(db_recipe_updated.created_at)
+        final_updated_at_dt = parse_sqlite_timestamp(db_recipe_updated.updated_at)
 
-# --- Tests for SkillTreeNode ---
+        assert final_created_at_dt == initial_created_at_dt, "created_at should not change on update"
+        assert final_updated_at_dt > initial_updated_at_dt, "updated_at should be greater after update"
+
+# --- Tests for SkillTreeNode (Commented out as per original structure) ---
 # class TestSkillTreeNodeCRUD:
 # def test_create_skill_tree_node(test_db):
 #     """Test creating a new skill tree node."""

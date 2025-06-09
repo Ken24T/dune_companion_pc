@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from app.services.import_export_service import ImportExportService, export_all_data, import_data
+from app.services.import_export_service import ImportExportService
 
 
 class TestImportExportService:
@@ -228,8 +228,8 @@ class TestImportExportService:
                 json.dump(test_data, f)
             
             # Test import (this will require mocking CRUD operations)
-            with patch('app.services.import_export_service.create_resource') as mock_create_resource, \
-                 patch('app.services.import_export_service.create_crafting_recipe') as mock_create_recipe:
+            with patch('app.services.import_export_service.create_resource'), \
+                 patch('app.services.import_export_service.create_crafting_recipe'):
                 
                 result = self.service.import_data(json_path, 'json')
                 assert result is True
@@ -327,39 +327,3 @@ class TestImportExportService:
             
             result = self.service.import_data(xml_path, 'xml')
             assert result is False
-
-
-class TestConvenienceFunctions:
-    """Test the module-level convenience functions."""
-
-    def test_export_all_data_function(self):
-        """Test the export_all_data convenience function."""
-        with tempfile.TemporaryDirectory() as temp_dir, \
-             patch('app.services.import_export_service.ImportExportService') as mock_service_class:
-            
-            mock_service = MagicMock()
-            mock_service.export_all_data.return_value = True
-            mock_service_class.return_value = mock_service
-            
-            export_path = Path(temp_dir) / 'test_export.json'
-            result = export_all_data(export_path, 'json')
-            
-            assert result is True
-            mock_service.export_all_data.assert_called_once_with(export_path, 'json')
-
-    def test_import_data_function(self):
-        """Test the import_data convenience function."""
-        with tempfile.TemporaryDirectory() as temp_dir, \
-             patch('app.services.import_export_service.ImportExportService') as mock_service_class:
-            
-            mock_service = MagicMock()
-            mock_service.import_data.return_value = True
-            mock_service_class.return_value = mock_service
-            
-            import_path = Path(temp_dir) / 'test_import.json'
-            import_path.write_text('{}')
-            
-            result = import_data(import_path, 'json')
-            
-            assert result is True
-            mock_service.import_data.assert_called_once_with(import_path, 'json', 'update')
