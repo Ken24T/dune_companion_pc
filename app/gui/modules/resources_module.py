@@ -8,7 +8,7 @@ from typing import List, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QTextEdit, QSplitter, QLabel, QLineEdit, QComboBox,
-    QGroupBox, QScrollArea
+    QGroupBox, QScrollArea, QApplication
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6 import QtCore
@@ -42,7 +42,7 @@ class ResourceListWidget(QListWidget):
             QListWidget::item {
                 padding: 8px 12px;
                 border-bottom: 1px solid rgba(80, 60, 40, 100);
-                color: rgb(220, 200, 160);
+                color: #FFF5D6;
             }
             QListWidget::item:selected {
                 background-color: rgba(180, 120, 60, 150);
@@ -93,7 +93,7 @@ class ResourceDetailWidget(QWidget):
             QLabel {
                 font-size: 20px;
                 font-weight: bold;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
                 padding: 10px;
                 border-bottom: 2px solid rgba(100, 80, 60, 150);
             }
@@ -165,7 +165,7 @@ class ResourceDetailWidget(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -181,12 +181,12 @@ class ResourceDetailWidget(QWidget):
                 detail_layout = QHBoxLayout()
                 
                 label_widget = QLabel(f"{label}:")
-                label_widget.setStyleSheet("font-weight: bold; color: rgb(200, 180, 140);")
+                label_widget.setStyleSheet("font-weight: bold; color: #FFE650;")
                 label_widget.setFixedWidth(120)
                 detail_layout.addWidget(label_widget)
                 
                 value_widget = QLabel(str(value))
-                value_widget.setStyleSheet("color: rgb(220, 200, 160);")
+                value_widget.setStyleSheet("color: #FFF5D6;")
                 value_widget.setWordWrap(True)
                 detail_layout.addWidget(value_widget)
                 
@@ -204,7 +204,7 @@ class ResourceDetailWidget(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -225,7 +225,7 @@ class ResourceDetailWidget(QWidget):
                 border: 1px solid rgba(80, 60, 40, 100);
                 border-radius: 4px;
                 padding: 8px;
-                color: rgb(220, 200, 160);
+                color: #FFF5D6;
                 font-size: 12px;
             }
         """)
@@ -253,7 +253,7 @@ class ResourcesModule(QWidget):
             QLabel {
                 font-size: 24px;
                 font-weight: bold;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
                 padding: 10px 0;
             }
         """)
@@ -264,7 +264,7 @@ class ResourcesModule(QWidget):
         
         # Search box
         search_label = QLabel("Search:")
-        search_label.setStyleSheet("color: rgb(200, 180, 140); font-weight: bold;")
+        search_label.setStyleSheet("color: #FFE650; font-weight: bold;")
         controls_layout.addWidget(search_label)
         
         self.search_box = QLineEdit()
@@ -275,7 +275,7 @@ class ResourcesModule(QWidget):
                 border: 1px solid rgba(100, 80, 60, 150);
                 border-radius: 4px;
                 padding: 6px;
-                color: rgb(220, 200, 160);
+                color: #FFF5D6;
                 font-size: 12px;
             }
         """)
@@ -284,7 +284,7 @@ class ResourcesModule(QWidget):
         
         # Category filter
         category_label = QLabel("Category:")
-        category_label.setStyleSheet("color: rgb(200, 180, 140); font-weight: bold;")
+        category_label.setStyleSheet("color: #FFE650; font-weight: bold;")
         controls_layout.addWidget(category_label)
         
         self.category_filter = QComboBox()
@@ -294,7 +294,7 @@ class ResourcesModule(QWidget):
                 border: 1px solid rgba(100, 80, 60, 150);
                 border-radius: 4px;
                 padding: 6px;
-                color: rgb(220, 200, 160);
+                color: #FFF5D6;
                 font-size: 12px;
             }
         """)
@@ -319,6 +319,11 @@ class ResourcesModule(QWidget):
         splitter.setSizes([300, 500])
         
         layout.addWidget(splitter)
+        
+        # Global button style (fix min-width for dialog buttons like About OK)
+        app_instance = QApplication.instance()
+        if isinstance(app_instance, QApplication):
+            app_instance.setStyleSheet(app_instance.styleSheet() + "\nQPushButton { background-color: #FFF5D6; color: rgb(45, 35, 25); border: none; border-radius: 4px; font-weight: bold; min-width: 80px; min-height: 28px; padding: 6px 24px; font-size: 14px; } QPushButton:hover { background-color: #FFE650; } QPushButton:pressed { background-color: #FFE650; }")
     
     def load_resources(self) -> None:
         """Load resources from the database."""

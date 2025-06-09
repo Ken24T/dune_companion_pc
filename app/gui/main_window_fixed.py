@@ -42,7 +42,7 @@ class SidebarWidget(QListWidget):
             QListWidget::item {
                 padding: 12px 16px;
                 border-bottom: 1px solid rgba(100, 80, 60, 100);
-                color: rgb(220, 200, 160);
+                color: #FFE650;
             }
             QListWidget::item:selected {
                 background-color: rgba(180, 120, 60, 150);

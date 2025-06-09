@@ -7,15 +7,14 @@ This module initializes and runs the PySide6 GUI application.
 
 import sys
 from pathlib import Path
-
-# Add the project root to the Python path for app imports
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 from app.gui.main_window import MainWindow
 from app.utils.logger import get_logger
+
+# Add the project root to the Python path for app imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # Get the app directory for asset paths
 app_dir = Path(__file__).parent
@@ -51,8 +50,9 @@ def setup_application_style(app: QApplication) -> None:
     # Base color scheme - desert/sand tones with dark elements
     base_color = QColor(45, 35, 25)          # Dark brown base
     alt_base_color = QColor(60, 45, 30)      # Slightly lighter brown
-    text_color = QColor(220, 200, 160)       # Sand/beige text
-    highlight_color = QColor(180, 120, 60)   # Orange/amber highlight
+    # Brighter yellow for text for more contrast
+    text_color = QColor(255, 230, 80)        # Bright yellow text
+    highlight_color = QColor(180, 120, 60)   # Orange/amber highlight (unchanged)
     disabled_color = QColor(120, 100, 80)    # Muted brown
     
     palette.setColor(QPalette.ColorRole.Window, base_color)

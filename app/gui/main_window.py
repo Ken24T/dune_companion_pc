@@ -42,7 +42,7 @@ class SidebarWidget(QListWidget):
             QListWidget::item {
                 padding: 12px 16px;
                 border-bottom: 1px solid rgba(100, 80, 60, 100);
-                color: rgb(220, 200, 160);
+                color: #FFE650;
             }
             QListWidget::item:selected {
                 background-color: rgba(180, 120, 60, 150);
@@ -76,6 +76,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Dune Companion")
         self.setMinimumSize(1000, 700)
         self.resize(1200, 800)
+        
+        # Global button style for all dialogs and main window
+        self.setStyleSheet(self.styleSheet() + "\nQPushButton { background-color: #FFF5D6; color: rgb(45, 35, 25); border: none; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #FFE650; } QPushButton:pressed { background-color: #FFE650; }")
         
         logger.info("Main window initialized")
     

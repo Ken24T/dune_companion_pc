@@ -38,7 +38,7 @@ class SettingsModule(QWidget):
             QLabel {
                 font-size: 24px;
                 font-weight: bold;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
                 padding: 10px 0;
             }
         """)
@@ -77,7 +77,7 @@ class SettingsModule(QWidget):
         save_button = QPushButton("Save Settings")
         save_button.setStyleSheet("""
             QPushButton {
-                background-color: rgba(180, 120, 60, 150);
+                background-color: #FFF5D6;
                 color: rgb(45, 35, 25);
                 border: none;
                 border-radius: 4px;
@@ -86,10 +86,10 @@ class SettingsModule(QWidget):
                 font-size: 14px;
             }
             QPushButton:hover {
-                background-color: rgba(180, 120, 60, 200);
+                background-color: #FFE650;
             }
             QPushButton:pressed {
-                background-color: rgba(180, 120, 60, 100);
+                background-color: #FFE650;
             }
         """)
         save_button.clicked.connect(self.save_settings)
@@ -108,7 +108,7 @@ class SettingsModule(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -186,7 +186,7 @@ class SettingsModule(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -244,7 +244,7 @@ class SettingsModule(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -302,7 +302,7 @@ class SettingsModule(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -359,7 +359,7 @@ class SettingsModule(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;

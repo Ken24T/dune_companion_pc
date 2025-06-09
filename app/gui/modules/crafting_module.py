@@ -91,7 +91,7 @@ class CraftingDetailWidget(QWidget):
             QLabel {
                 font-size: 20px;
                 font-weight: bold;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
                 padding: 10px;
                 border-bottom: 2px solid rgba(100, 80, 60, 150);
             }
@@ -163,7 +163,7 @@ class CraftingDetailWidget(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -179,12 +179,11 @@ class CraftingDetailWidget(QWidget):
                 detail_layout = QHBoxLayout()
                 
                 label_widget = QLabel(f"{label}:")
-                label_widget.setStyleSheet("font-weight: bold; color: rgb(200, 180, 140);")
-                label_widget.setFixedWidth(150)
+                label_widget.setStyleSheet("font-weight: bold; color: #FFE650;")
+                label_widget.setFixedWidth(120)
                 detail_layout.addWidget(label_widget)
-                
                 value_widget = QLabel(str(value))
-                value_widget.setStyleSheet("color: rgb(220, 200, 160);")
+                value_widget.setStyleSheet("color: #FFE650;")
                 value_widget.setWordWrap(True)
                 detail_layout.addWidget(value_widget)
                 
@@ -202,7 +201,7 @@ class CraftingDetailWidget(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -223,7 +222,7 @@ class CraftingDetailWidget(QWidget):
                 border: 1px solid rgba(80, 60, 40, 100);
                 border-radius: 4px;
                 padding: 8px;
-                color: rgb(220, 200, 160);
+                color: #FFE650;
                 font-size: 12px;
             }
         """)
@@ -242,7 +241,7 @@ class CraftingDetailWidget(QWidget):
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -322,7 +321,7 @@ class CraftingModule(QWidget):
             QLabel {
                 font-size: 24px;
                 font-weight: bold;
-                color: rgb(180, 120, 60);
+                color: #FFE650;
                 padding: 10px 0;
             }
         """)
@@ -333,43 +332,22 @@ class CraftingModule(QWidget):
         
         # Search box
         search_label = QLabel("Search:")
-        search_label.setStyleSheet("color: rgb(200, 180, 140); font-weight: bold;")
+        search_label.setStyleSheet("color: #FFE650; font-weight: bold;")
         controls_layout.addWidget(search_label)
-        
+
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Search recipes...")
-        self.search_box.setStyleSheet("""
-            QLineEdit {
-                background-color: rgba(60, 45, 30, 150);
-                border: 1px solid rgba(100, 80, 60, 150);
-                border-radius: 4px;
-                padding: 6px;
-                color: rgb(220, 200, 160);
-                font-size: 12px;
-            }
-        """)
         self.search_box.textChanged.connect(self.filter_recipes)
         controls_layout.addWidget(self.search_box)
-        
-        # Category filter
+
         category_label = QLabel("Category:")
-        category_label.setStyleSheet("color: rgb(200, 180, 140); font-weight: bold;")
+        category_label.setStyleSheet("color: #FFE650; font-weight: bold;")
         controls_layout.addWidget(category_label)
-        
+
         self.category_filter = QComboBox()
-        self.category_filter.setStyleSheet("""
-            QComboBox {
-                background-color: rgba(60, 45, 30, 150);
-                border: 1px solid rgba(100, 80, 60, 150);
-                border-radius: 4px;
-                padding: 6px;
-                color: rgb(220, 200, 160);
-                font-size: 12px;
-            }
-        """)
-        self.category_filter.currentTextChanged.connect(self.filter_recipes)
+        self.category_filter.currentIndexChanged.connect(self.filter_recipes)
         controls_layout.addWidget(self.category_filter)
-        
+
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
         
@@ -388,6 +366,9 @@ class CraftingModule(QWidget):
         splitter.setSizes([300, 500])
         
         layout.addWidget(splitter)
+        
+        # Global button style for this module
+        self.setStyleSheet(self.styleSheet() + "\nQPushButton { background-color: #FFF5D6; color: rgb(45, 35, 25); border: none; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #FFE650; } QPushButton:pressed { background-color: #FFE650; }")
     
     def load_recipes(self) -> None:
         """Load crafting recipes from the database."""
