@@ -1,6 +1,7 @@
 import pytest
 import os
 import time
+import gc # Add import for garbage collection
 from typing import Optional, List
 from app.data.database import initialize_database, get_db_connection
 from app.data.models import (
@@ -62,26 +63,61 @@ def test_db():
     # For this example, we will use a file-based test DB to also test path handling.
     os.makedirs(TEST_DB_DIR, exist_ok=True)
     
+    # Ensure the database file is removed before initialization for a clean state
+    if os.path.exists(TEST_DB_PATH):
+        try:
+            os.remove(TEST_DB_PATH)
+        except PermissionError as e:
+            logger.error(f"Critical: Could not remove existing test database file {TEST_DB_PATH} before test setup: {e}")
+            # Try garbage collection and a small delay if initial removal fails in setup
+            gc.collect()
+            time.sleep(0.1)
+            try:
+                os.remove(TEST_DB_PATH)
+            except PermissionError as e_retry:
+                logger.error(f"Critical: Still could not remove {TEST_DB_PATH} after retry in setup: {e_retry}")
+                raise # Fail fast if setup cannot ensure a clean environment
+    
     # Initialize a fresh database for each test function
     initialize_database(db_path=TEST_DB_PATH)
     
     yield TEST_DB_PATH # Provide the path to the test database
 
     # Teardown: close connections and remove the test database file
-    # Connections are closed within CRUD operations, but good to be sure.
-    # Attempt to remove the test database file
-    try:
-        if os.path.exists(TEST_DB_PATH):
-            # Explicitly close any open connections if possible, though crud ops should handle this.
-            # Forcibly trying to delete, hoping file handles are released.
-            # Consider a small delay if PermissionError persists, or ensure all connections are truly closed.
-            # time.sleep(0.1) # Small delay, uncomment if needed
-            os.remove(TEST_DB_PATH)
-        # Attempt to remove the test database directory if it's empty
-        if os.path.exists(TEST_DB_DIR) and not os.listdir(TEST_DB_DIR):
+    # Force garbage collection to help release file handles that might be lingering
+    gc.collect()
+    
+    # Attempt to remove the test database file with retries
+    if os.path.exists(TEST_DB_PATH):
+        for i in range(5):  # Try up to 5 times
+            try:
+                os.remove(TEST_DB_PATH)
+                logger.info(f"Successfully removed test database {TEST_DB_PATH} on attempt {i + 1} during teardown.")
+                break  # Exit loop if successful
+            except PermissionError as e:
+                logger.warning(f"Attempt {i + 1} to remove {TEST_DB_PATH} during teardown failed: {e}")
+                if i < 4:  # If not the last attempt
+                    gc.collect() # Try collecting again before sleep
+                    time.sleep(0.2 * (i + 1))  # Wait a bit longer each time before retrying
+                else:  # Last attempt failed
+                    logger.error(f"Failed to remove test database {TEST_DB_PATH} after multiple attempts during teardown: {e}")
+                    # Depending on strictness, you might want to raise an error here or ensure CI flags this.
+            except Exception as e: # Catch other potential errors during removal
+                logger.error(f"An unexpected error occurred while trying to remove {TEST_DB_PATH} during teardown: {e}")
+                break # Stop trying if it's not a PermissionError
+        else: # Executed if the loop completes without a break (i.e., all retries failed)
+            logger.error(f"Loop completed: Failed to remove test database {TEST_DB_PATH} after all retries during teardown.")
+
+    # Attempt to remove the test database directory if it's empty
+    if os.path.exists(TEST_DB_DIR) and not os.listdir(TEST_DB_DIR):
+        try:
             os.rmdir(TEST_DB_DIR)
-    except PermissionError as e:
-        logger.warning(f"Warning: Could not remove test database file {TEST_DB_PATH} or dir {TEST_DB_DIR}: {e}")
+            logger.info(f"Successfully removed test database directory {TEST_DB_DIR} during teardown.")
+        except OSError as e: # Catches PermissionError and other OS-related errors like "directory not empty"
+            logger.warning(f"Could not remove test database directory {TEST_DB_DIR} during teardown: {e}")
+    elif os.path.exists(TEST_DB_DIR):
+        # This case means the directory still contains files (e.g., the DB file if removal failed, or other unexpected files)
+        logger.warning(f"Test database directory {TEST_DB_DIR} was not removed during teardown because it is not empty.")
 
 def test_database_initialization(test_db):
     """Test that the database initializes correctly and tables are created."""
@@ -394,20 +430,35 @@ def test_resource_updated_at_trigger(test_db):
 # --- Fixture for CraftingRecipe tests ---
 @pytest.fixture(scope="function")
 def setup_common_resources_for_recipes(test_db):
-    """Set up some common resources needed for recipe tests."""
-    res_iron_ingot = create_resource(db_path=test_db, name="Iron Ingot", category="Material")
-    res_copper_wire = create_resource(db_path=test_db, name="Copper Wire", category="Component")
-    res_plastic_casing = create_resource(db_path=test_db, name="Plastic Casing", category="Component")
+    """Set up some common resources needed for recipe tests.
+    Creates them if they don't exist, or fetches them if they do.
+    """
+    logger.info("Setting up common resources for recipe tests...")
+    resources_to_create_and_fetch = [
+        {"name": "Iron Ingot", "category": "Material", "key": "iron_ingot"},
+        {"name": "Copper Wire", "category": "Component", "key": "copper_wire"},
+        {"name": "Plastic Casing", "category": "Component", "key": "plastic_casing"},
+    ]
     
-    assert res_iron_ingot is not None and res_iron_ingot.id is not None
-    assert res_copper_wire is not None and res_copper_wire.id is not None
-    assert res_plastic_casing is not None and res_plastic_casing.id is not None
+    created_or_fetched_resources = {}
     
-    return {
-        "Iron Ingot": res_iron_ingot,
-        "Copper Wire": res_copper_wire,
-        "Plastic Casing": res_plastic_casing
-    }
+    for res_data in resources_to_create_and_fetch:
+        resource = create_resource(db_path=test_db, name=res_data["name"], category=res_data["category"])
+        if resource is None: 
+            logger.warning(f"Resource '{res_data['name']}' creation returned None (likely exists), attempting to fetch.")
+            resource = get_resource_by_name(db_path=test_db, name=res_data["name"])
+        
+        if resource is None:
+            # This case should ideally not be hit if the DB is clean or the item truly exists.
+            # Logging an error here helps diagnose if there's a deeper issue.
+            logger.error(f"Critical error: Failed to create AND fetch resource: {res_data['name']}. DB state is unexpected.")
+
+        assert resource is not None, f"Failed to create or fetch resource: {res_data['name']}"
+        assert resource.id is not None, f"Resource '{res_data['name']}' has no ID after creation/fetching."
+        created_or_fetched_resources[res_data["key"]] = resource
+        logger.info(f"Ensured resource '{res_data['name']}' (ID: {resource.id}) is available for the test.")
+            
+    return created_or_fetched_resources
 
 # --- CRUD Tests for CraftingRecipe ---
 class TestCraftingRecipeCRUD: # Group tests in a class
@@ -415,8 +466,8 @@ class TestCraftingRecipeCRUD: # Group tests in a class
     def test_create_crafting_recipe(self, test_db, setup_common_resources_for_recipes):
         """Test creating a new crafting recipe with ingredients."""
         resources = setup_common_resources_for_recipes
-        assert resources["Iron Ingot"].id is not None # Ensure IDs are not None
-        assert resources["Copper Wire"].id is not None
+        assert resources["iron_ingot"].id is not None # Ensure IDs are not None
+        assert resources["copper_wire"].id is not None
 
         created_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
             db_path=test_db,
@@ -425,8 +476,8 @@ class TestCraftingRecipeCRUD: # Group tests in a class
             output_item_name="Gadget Alpha",
             output_quantity=1,
             ingredients=[
-                RecipeIngredient(resource_id=resources["Iron Ingot"].id, quantity=2), 
-                RecipeIngredient(resource_id=resources["Copper Wire"].id, quantity=5)
+                RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=2), 
+                RecipeIngredient(resource_id=resources["copper_wire"].id, quantity=5)
             ]
         )
         assert created_recipe is not None
@@ -438,8 +489,8 @@ class TestCraftingRecipeCRUD: # Group tests in a class
         assert retrieved_recipe.output_item_name == "Gadget Alpha"
         assert len(retrieved_recipe.ingredients) == 2
         
-        ing_iron = next((ing for ing in retrieved_recipe.ingredients if ing.resource_id == resources["Iron Ingot"].id), None)
-        ing_copper = next((ing for ing in retrieved_recipe.ingredients if ing.resource_id == resources["Copper Wire"].id), None)
+        ing_iron = next((ing for ing in retrieved_recipe.ingredients if ing.resource_id == resources["iron_ingot"].id), None)
+        ing_copper = next((ing for ing in retrieved_recipe.ingredients if ing.resource_id == resources["copper_wire"].id), None)
         
         assert ing_iron is not None
         assert ing_iron.quantity == 2
@@ -483,13 +534,13 @@ class TestCraftingRecipeCRUD: # Group tests in a class
     def test_get_crafting_recipe_by_id(self, test_db, setup_common_resources_for_recipes):
         """Test retrieving a recipe by ID."""
         resources = setup_common_resources_for_recipes
-        assert resources["Plastic Casing"].id is not None
+        assert resources["plastic_casing"].id is not None
 
         created_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
             db_path=test_db,
-            name="Specific Recipe", 
-            output_item_name="Specific Output",
-            ingredients=[RecipeIngredient(resource_id=resources["Plastic Casing"].id, quantity=1)]
+            name="Advanced Gadget",
+            output_item_name="Gadget Beta",
+            ingredients=[RecipeIngredient(resource_id=resources["plastic_casing"].id, quantity=1)]
         )
         assert created_recipe is not None
         assert created_recipe.id is not None
@@ -497,9 +548,9 @@ class TestCraftingRecipeCRUD: # Group tests in a class
         retrieved: Optional[CraftingRecipe] = get_crafting_recipe_by_id(db_path=test_db, recipe_id=created_recipe.id)
         assert retrieved is not None
         assert retrieved.id == created_recipe.id
-        assert retrieved.name == "Specific Recipe"
+        assert retrieved.name == "Advanced Gadget"
         assert len(retrieved.ingredients) == 1
-        assert retrieved.ingredients[0].resource_id == resources["Plastic Casing"].id
+        assert retrieved.ingredients[0].resource_id == resources["plastic_casing"].id
         assert retrieved.ingredients[0].resource_name == "Plastic Casing"
 
     def test_get_crafting_recipe_by_id_non_existent(self, test_db):
@@ -510,13 +561,13 @@ class TestCraftingRecipeCRUD: # Group tests in a class
     def test_get_crafting_recipe_by_name(self, test_db, setup_common_resources_for_recipes):
         """Test retrieving a recipe by its name."""
         resources = setup_common_resources_for_recipes
-        assert resources["Iron Ingot"].id is not None
+        assert resources["iron_ingot"].id is not None
 
         created_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
             db_path=test_db,
             name="Searchable Recipe", 
             output_item_name="Searchable Output",
-            ingredients=[RecipeIngredient(resource_id=resources["Iron Ingot"].id, quantity=3)]
+            ingredients=[RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=3)]
         )
         assert created_recipe is not None
 
@@ -524,7 +575,7 @@ class TestCraftingRecipeCRUD: # Group tests in a class
         assert retrieved is not None
         assert retrieved.name == "Searchable Recipe"
         assert len(retrieved.ingredients) == 1
-        assert retrieved.ingredients[0].resource_id == resources["Iron Ingot"].id
+        assert retrieved.ingredients[0].resource_id == resources["iron_ingot"].id
         assert retrieved.ingredients[0].resource_name == "Iron Ingot"
 
     def test_get_crafting_recipe_by_name_non_existent(self, test_db):
@@ -535,14 +586,14 @@ class TestCraftingRecipeCRUD: # Group tests in a class
     def test_get_all_crafting_recipes(self, test_db, setup_common_resources_for_recipes):
         """Test retrieving all crafting recipes."""
         resources = setup_common_resources_for_recipes
-        assert resources["Iron Ingot"].id is not None
-        assert resources["Copper Wire"].id is not None
+        assert resources["iron_ingot"].id is not None
+        assert resources["copper_wire"].id is not None
 
         create_crafting_recipe(db_path=test_db, name="Recipe A", output_item_name="Item A", ingredients=[
-            RecipeIngredient(resource_id=resources["Iron Ingot"].id, quantity=1)
+            RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=1)
         ])
         create_crafting_recipe(db_path=test_db, name="Recipe B", output_item_name="Item B", ingredients=[
-            RecipeIngredient(resource_id=resources["Copper Wire"].id, quantity=2)
+            RecipeIngredient(resource_id=resources["copper_wire"].id, quantity=2)
         ])
 
         all_recipes: List[CraftingRecipe] = get_all_crafting_recipes(db_path=test_db)
@@ -554,15 +605,15 @@ class TestCraftingRecipeCRUD: # Group tests in a class
         recipe_a = next((r for r in all_recipes if r.name == "Recipe A"), None)
         assert recipe_a is not None
         assert len(recipe_a.ingredients) == 1
-        assert recipe_a.ingredients[0].resource_id == resources["Iron Ingot"].id
+        assert recipe_a.ingredients[0].resource_id == resources["iron_ingot"].id
         assert recipe_a.ingredients[0].resource_name == "Iron Ingot"
 
     def test_update_crafting_recipe_fields_and_ingredients(self, test_db, setup_common_resources_for_recipes):
         """Test updating recipe fields and its ingredients list."""
         resources = setup_common_resources_for_recipes
-        assert resources["Iron Ingot"].id is not None
-        assert resources["Copper Wire"].id is not None
-        assert resources["Plastic Casing"].id is not None
+        assert resources["iron_ingot"].id is not None
+        assert resources["copper_wire"].id is not None
+        assert resources["plastic_casing"].id is not None
 
         created_initial_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
             db_path=test_db,
@@ -571,7 +622,7 @@ class TestCraftingRecipeCRUD: # Group tests in a class
             output_item_name="UG-1",
             output_quantity=1,
             ingredients=[
-                RecipeIngredient(resource_id=resources["Iron Ingot"].id, quantity=1)
+                RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=1)
             ]
         )
         assert created_initial_recipe is not None and created_initial_recipe.id is not None
@@ -585,8 +636,8 @@ class TestCraftingRecipeCRUD: # Group tests in a class
             description="Version 2.0 with more features", 
             output_quantity=2, 
             ingredients=[
-                RecipeIngredient(resource_id=resources["Copper Wire"].id, quantity=10),
-                RecipeIngredient(resource_id=resources["Plastic Casing"].id, quantity=3)
+                RecipeIngredient(resource_id=resources["copper_wire"].id, quantity=10),
+                RecipeIngredient(resource_id=resources["plastic_casing"].id, quantity=3)
             ]
         )
         assert updated_recipe_obj is not None
@@ -599,8 +650,8 @@ class TestCraftingRecipeCRUD: # Group tests in a class
         assert fetched_updated_recipe.output_quantity == 2
         assert len(fetched_updated_recipe.ingredients) == 2
 
-        ing_copper = next((ing for ing in fetched_updated_recipe.ingredients if ing.resource_id == resources["Copper Wire"].id), None)
-        ing_plastic = next((ing for ing in fetched_updated_recipe.ingredients if ing.resource_id == resources["Plastic Casing"].id), None)
+        ing_copper = next((ing for ing in fetched_updated_recipe.ingredients if ing.resource_id == resources["copper_wire"].id), None)
+        ing_plastic = next((ing for ing in fetched_updated_recipe.ingredients if ing.resource_id == resources["plastic_casing"].id), None)
 
         assert ing_copper is not None and ing_copper.quantity == 10 and ing_copper.resource_name == "Copper Wire"
         assert ing_plastic is not None and ing_plastic.quantity == 3 and ing_plastic.resource_name == "Plastic Casing"
@@ -613,13 +664,13 @@ class TestCraftingRecipeCRUD: # Group tests in a class
     def test_delete_crafting_recipe_and_ingredients(self, test_db, setup_common_resources_for_recipes):
         """Test deleting a crafting recipe and its ingredients (via CASCADE)."""
         resources = setup_common_resources_for_recipes
-        assert resources["Copper Wire"].id is not None
+        assert resources["copper_wire"].id is not None
 
         created_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
             db_path=test_db,
             name="To Be Deleted", 
             output_item_name="TBD-1",
-            ingredients=[RecipeIngredient(resource_id=resources["Copper Wire"].id, quantity=3)]
+            ingredients=[RecipeIngredient(resource_id=resources["copper_wire"].id, quantity=3)]
         )
         assert created_recipe is not None and created_recipe.id is not None
         recipe_id: int = created_recipe.id
@@ -660,7 +711,7 @@ class TestCraftingRecipeCRUD: # Group tests in a class
     def test_crafting_recipe_updated_at_trigger(self, test_db, setup_common_resources_for_recipes):
         """Test the updated_at trigger for crafting_recipe table."""
         resources = setup_common_resources_for_recipes
-        assert resources["Iron Ingot"].id is not None
+        assert resources["iron_ingot"].id is not None
 
         created_recipe: Optional[CraftingRecipe] = create_crafting_recipe(
             db_path=test_db,
@@ -668,7 +719,7 @@ class TestCraftingRecipeCRUD: # Group tests in a class
             description="Initial Description",
             output_item_name="TTR-1",
             output_quantity=1,
-            ingredients=[RecipeIngredient(resource_id=resources["Iron Ingot"].id, quantity=1)]
+            ingredients=[RecipeIngredient(resource_id=resources["iron_ingot"].id, quantity=1)]
         )
         assert created_recipe is not None and created_recipe.id is not None
         recipe_id: int = created_recipe.id

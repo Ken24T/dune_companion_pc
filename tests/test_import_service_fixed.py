@@ -228,8 +228,8 @@ class TestImportExportService:
                 json.dump(test_data, f)
             
             # Test import (this will require mocking CRUD operations)
-            with patch('app.services.import_export_service.create_resource'), \
-                 patch('app.services.import_export_service.create_crafting_recipe'):
+            with patch('app.services.import_export_service.create_resource') as mock_create_resource, \
+                 patch('app.services.import_export_service.create_crafting_recipe') as mock_create_recipe:
                 
                 result = self.service.import_data(json_path, 'json')
                 assert result is True

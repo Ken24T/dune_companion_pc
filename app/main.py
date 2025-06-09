@@ -6,16 +6,19 @@ This module initializes and runs the PySide6 GUI application.
 """
 
 import sys
-
 from pathlib import Path
+
+# Add the project root to the Python path for app imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 from app.gui.main_window import MainWindow
 from app.utils.logger import get_logger
 
-# Add the app directory to the Python path
+# Get the app directory for asset paths
 app_dir = Path(__file__).parent
-sys.path.insert(0, str(app_dir))
 
 logger = get_logger(__name__)
 
