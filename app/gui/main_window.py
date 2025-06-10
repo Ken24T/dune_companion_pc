@@ -7,69 +7,63 @@ menu bar, and content area for displaying different modules.
 
 from typing import Dict, Optional
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QSplitter, QListWidget, QListWidgetItem, QStackedWidget,
-    QLabel, QStatusBar, QFrame, QMessageBox, QFileDialog
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QStackedWidget,
+    QSplitter, QListWidgetItem, QStatusBar, QMessageBox, QFileDialog, QListWidget
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QAction # QAction is kept
 
-from .modules.resources_module import ResourcesModule
-from .modules.crafting_module import CraftingModule
-from .modules.settings_module import SettingsModule
+from app.gui.modules.resources_module import ResourcesModule
+from app.gui.modules.crafting_module import CraftingModule
+from app.gui.modules.settings_module import SettingsModule
 from app.utils.logger import get_logger
+from app.utils.network_utils import check_internet_connection
 
 logger = get_logger(__name__)
 
 
-class SidebarWidget(QListWidget):
-    """Custom sidebar widget for navigation."""
-    
+class SidebarWidget(QListWidget):  # Added SidebarWidget class definition
+    """Custom QListWidget for the sidebar navigation."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(200)
-        self.setFrameStyle(QFrame.Shape.NoFrame)
-        
-        # Customize the sidebar appearance
+        self.setFixedWidth(200) # Example width, can be adjusted
         self.setStyleSheet("""
             QListWidget {
-                background-color: rgba(30, 25, 20, 180);
-                border: none;
-                outline: none;
-                font-size: 14px;
-                font-weight: bold;
+                background-color: rgba(30, 20, 10, 200); /* Darker, more thematic */
+                border: none; /* Remove border if splitter handles separation */
+                color: #FFF5D6; /* Cream color for text */
+                font-size: 14px; /* Slightly larger font */
+                padding-top: 10px; /* Space at the top */
             }
             QListWidget::item {
-                padding: 12px 16px;
-                border-bottom: 1px solid rgba(100, 80, 60, 100);
-                color: #FFE650;
+                padding: 12px 15px; /* More padding for items */
+                border-bottom: 1px solid rgba(80, 60, 40, 100); /* Separator line */
             }
             QListWidget::item:selected {
-                background-color: rgba(180, 120, 60, 150);
-                color: rgb(45, 35, 25);
+                background-color: rgba(180, 120, 60, 180); /* More prominent selection */
+                color: rgb(45, 35, 25); /* Dark text on selection */
+                font-weight: bold;
             }
             QListWidget::item:hover {
-                background-color: rgba(120, 90, 60, 80);
+                background-color: rgba(120, 90, 60, 100); /* Subtle hover */
             }
         """)
 
 
 class MainWindow(QMainWindow):
-    """Main application window with sidebar navigation and content area."""
-    
-    # Signal emitted when the online status changes
     online_status_changed = Signal(bool)
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
+
+    def __init__(self):
+        super().__init__()
         
         self.current_module: Optional[QWidget] = None
         self.modules: Dict[str, QWidget] = {}
-        self.is_online = False
+        self.is_online = False # Retained for potential direct checks if needed
         
         self.setup_ui()
         self.setup_menu_bar()
-        self.setup_status_bar()
+        self.setup_status_bar() # This already calls update_status_bar() for initial check
         self.load_modules()
         
         # Set window properties
@@ -77,8 +71,25 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1000, 700)
         self.resize(1200, 800)
         
-        # Global button style for all dialogs and main window
-        self.setStyleSheet(self.styleSheet() + "\nQPushButton { background-color: #FFF5D6; color: rgb(45, 35, 25); border: none; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #FFE650; } QPushButton:pressed { background-color: #FFE650; }")
+        # Global button style
+        self.setStyleSheet(self.styleSheet() + """QPushButton { 
+            background-color: #FFF5D6; 
+            color: rgb(45, 35, 25); 
+            border: none; 
+            border-radius: 4px; 
+            font-weight: bold; 
+        } 
+        QPushButton:hover { 
+            background-color: #FFE650; 
+        } 
+        QPushButton:pressed { 
+            background-color: #FFE650; 
+        }""")
+
+        # Timer to periodically check connection status
+        self.status_check_timer = QTimer(self)
+        self.status_check_timer.timeout.connect(self.update_status_bar)
+        self.status_check_timer.start(30000) # Check every 30 seconds (30000 ms)
         
         logger.info("Main window initialized")
     
@@ -186,23 +197,32 @@ class MainWindow(QMainWindow):
         help_menu.addAction(about_action)
     
     def setup_status_bar(self) -> None:
-        """Set up the status bar."""
+        """Set up the status bar at the bottom of the window."""
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        
-        # Online status indicator
-        self.online_status_label = QLabel("Offline")
-        self.online_status_label.setStyleSheet("""
-            QLabel {
-                color: rgb(180, 120, 60);
-                font-weight: bold;
-                padding: 2px 8px;
-            }
-        """)
-        self.status_bar.addPermanentWidget(self.online_status_label)
-        
-        # Default status message
-        self.status_bar.showMessage("Ready")
+
+        # Connectivity Status Label (far left)
+        self.status_label = QLabel("Status: Unknown")
+        # Initial minimal styling; update_status_bar will set color and font-weight.
+        self.status_label.setStyleSheet("padding: 2px 5px;") 
+        self.status_bar.addWidget(self.status_label)
+
+        # Current Action/View Label (center, will take available space)
+        self.current_action_label = QLabel("") # Initially empty
+        self.current_action_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Style to match module titles (yellow, bold)
+        self.current_action_label.setStyleSheet("padding: 2px 10px; color: #FFE650; font-weight: bold;")
+        self.status_bar.addWidget(self.current_action_label, 1) # Stretch factor of 1 to take available space
+
+        # Version Label (far right, permanent)
+        app_version = "0.1.0-alpha" # TODO: Replace with dynamic version later
+        self.version_label = QLabel(f"Version: {app_version}")
+        self.version_label.setStyleSheet("color: #A0A0A0; padding: 2px 5px;")
+        self.status_bar.addPermanentWidget(self.version_label)
+
+        # Call to set the initial text and style based on connectivity
+        self.update_status_bar()
+        # self.current_action_label can be set initially if needed, e.g., after first module loads
     
     def load_modules(self) -> None:
         """Load and initialize all application modules."""
@@ -285,8 +305,9 @@ class MainWindow(QMainWindow):
         if module_key in self.modules:
             self.current_module = self.modules[module_key]
             self.content_stack.setCurrentWidget(self.current_module)
-            self.status_bar.showMessage(f"Viewing {item.text()}")
-            logger.debug(f"Switched to module: {module_key}")
+            # self.status_bar.showMessage(f"Viewing {item.text()}") # OLD
+            self.current_action_label.setText(f"Viewing {item.text()}") # NEW
+            logger.debug(f"Switched to module: {module_key}. Current action label updated.")
     
     def refresh_current_module(self) -> None:
         """Refresh the currently displayed module."""
@@ -341,32 +362,16 @@ class MainWindow(QMainWindow):
         
         QMessageBox.about(self, "About Dune Companion", about_text)
     
-    def update_online_status(self, is_online: bool) -> None:
-        """Update the online status indicator."""
-        self.is_online = is_online
-        
+    def update_status_bar(self) -> None:
+        """Checks internet connection and updates the status bar label and style."""
+        is_online = check_internet_connection()
+        current_padding = "padding: 2px 5px;" # Define consistent padding
         if is_online:
-            self.online_status_label.setText("Online")
-            self.online_status_label.setStyleSheet("""
-                QLabel {
-                    color: rgb(120, 180, 60);
-                    font-weight: bold;
-                    padding: 2px 8px;
-                }
-            """)
+            self.status_label.setText("Status: Online")
+            self.status_label.setStyleSheet(f"color: #A1FFA1; {current_padding} font-weight: bold;")
         else:
-            self.online_status_label.setText("Offline")
-            self.online_status_label.setStyleSheet("""
-                QLabel {
-                    color: rgb(180, 120, 60);
-                    font-weight: bold;
-                    padding: 2px 8px;
-                }
-            """)
+            self.status_label.setText("Status: Offline")
+            self.status_label.setStyleSheet(f"color: #FFA1A1; {current_padding} font-weight: bold;")
         
         self.online_status_changed.emit(is_online)
-    
-    def closeEvent(self, event):
-        """Handle the window close event."""
-        logger.info("Main window closing")
-        event.accept()
+        logger.debug(f"Status bar updated: {self.status_label.text()}")

@@ -6,9 +6,9 @@ This module provides the interface for configuring application settings.
 
 from typing import Dict, Any
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QCheckBox, QLineEdit, QSpinBox, QComboBox,
-    QFileDialog, QMessageBox, QTextEdit, QScrollArea
+    QFileDialog, QMessageBox, QTextEdit, QScrollArea, QSplitter # Added QSplitter
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -29,24 +29,43 @@ class SettingsModule(QWidget):
     
     def setup_ui(self) -> None:
         """Set up the settings module UI."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 0, 10, 10) # Top margin 0 for the main layout
-        layout.setSpacing(0) # No space between header and scroll_area
-        
+        module_layout = QVBoxLayout(self)
+        self.setLayout(module_layout) # Set the main layout for the QWidget
+        module_layout.setContentsMargins(10, 0, 10, 10)
+        module_layout.setSpacing(0)
+
         # Header
         header_label = QLabel("Settings")
         header_label.setStyleSheet("""
-            QLabel {
-                font-size: 20px;
-                font-weight: bold;
-                color: #FFE650;
-                padding: 5px 0px; 
-                margin: 0px;
-            }
+            padding: 5px 0px 5px 0px; /* Standardized padding */
+            color: #FFE650;
+            font-weight: bold;
+            font-size: 20px;
+            margin: 0px; /* Ensure no extra margin */
         """)
         header_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(header_label)
-        
+        module_layout.addWidget(header_label)
+
+        # Controls Area (currently empty for settings, but consistent structure)
+        controls_widget = QWidget()
+        controls_layout = QHBoxLayout(controls_widget)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(0)
+        # Add any specific controls for settings here if needed in the future
+        # e.g., a search bar for settings:
+        # search_label = QLabel("Search Settings:")
+        # search_input = QLineEdit()
+        # search_input.setFixedWidth(250) # Example width
+        # controls_layout.addWidget(search_label)
+        # controls_layout.addWidget(search_input)
+        # controls_layout.addStretch()
+        module_layout.addWidget(controls_widget)
+
+        module_layout.addSpacing(8) # Standard spacing
+
+        # Main content area with QSplitter
+        splitter = QSplitter(Qt.Orientation.Vertical) # Or Horizontal if needed
+
         # Scroll area for settings
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -56,14 +75,13 @@ class SettingsModule(QWidget):
                 background-color: transparent;
             }
         """)
-        
+
         settings_widget = QWidget()
         settings_layout = QVBoxLayout(settings_widget)
         settings_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        # Add a small top padding inside the scroll area, and spacing between group boxes
-        settings_layout.setContentsMargins(0, 5, 0, 5) # 5px top padding
-        settings_layout.setSpacing(10) # 10px spacing between items (group boxes)
-        
+        settings_layout.setContentsMargins(0, 5, 0, 5)
+        settings_layout.setSpacing(10)
+
         # Database settings
         self.add_database_settings(settings_layout)
         
@@ -102,7 +120,12 @@ class SettingsModule(QWidget):
         settings_layout.addWidget(save_button)
         
         scroll_area.setWidget(settings_widget)
-        layout.addWidget(scroll_area)
+        
+        # Add scroll_area to the splitter
+        splitter.addWidget(scroll_area)
+        splitter.setStretchFactor(0, 1) # Ensure scroll_area fills available space
+
+        module_layout.addWidget(splitter, 1) # Add splitter to main layout, stretch factor 1
     
     def add_database_settings(self, layout: QVBoxLayout) -> None:
         """Add database-related settings."""
