@@ -30,18 +30,21 @@ class SettingsModule(QWidget):
     def setup_ui(self) -> None:
         """Set up the settings module UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(10, 0, 10, 10) # Top margin 0 for the main layout
+        layout.setSpacing(0) # No space between header and scroll_area
         
         # Header
         header_label = QLabel("Settings")
         header_label.setStyleSheet("""
             QLabel {
-                font-size: 24px;
+                font-size: 20px;
                 font-weight: bold;
                 color: #FFE650;
-                padding: 10px 0;
+                padding: 5px 0px; 
+                margin: 0px;
             }
         """)
+        header_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(header_label)
         
         # Scroll area for settings
@@ -57,6 +60,9 @@ class SettingsModule(QWidget):
         settings_widget = QWidget()
         settings_layout = QVBoxLayout(settings_widget)
         settings_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        # Add a small top padding inside the scroll area, and spacing between group boxes
+        settings_layout.setContentsMargins(0, 5, 0, 5) # 5px top padding
+        settings_layout.setSpacing(10) # 10px spacing between items (group boxes)
         
         # Database settings
         self.add_database_settings(settings_layout)
@@ -106,7 +112,7 @@ class SettingsModule(QWidget):
                 font-weight: bold;
                 border: 1px solid rgba(100, 80, 60, 150);
                 border-radius: 4px;
-                margin-top: 10px;
+                /* margin-top: 10px; */ /* Removed, spacing handled by parent layout */
                 padding-top: 10px;
                 color: #FFE650;
             }
@@ -184,7 +190,7 @@ class SettingsModule(QWidget):
                 font-weight: bold;
                 border: 1px solid rgba(100, 80, 60, 150);
                 border-radius: 4px;
-                margin-top: 10px;
+                /* margin-top: 10px; */ /* Removed, spacing handled by parent layout */
                 padding-top: 10px;
                 color: #FFE650;
             }
@@ -235,14 +241,14 @@ class SettingsModule(QWidget):
         layout.addWidget(group_box)
     
     def add_ui_settings(self, layout: QVBoxLayout) -> None:
-        """Add UI-related settings."""
-        group_box = QGroupBox("User Interface Settings")
+        """Add UI customization settings."""
+        group_box = QGroupBox("UI Settings")
         group_box.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
                 border: 1px solid rgba(100, 80, 60, 150);
                 border-radius: 4px;
-                margin-top: 10px;
+                /* margin-top: 10px; */ /* Removed, spacing handled by parent layout */
                 padding-top: 10px;
                 color: #FFE650;
             }
@@ -300,7 +306,7 @@ class SettingsModule(QWidget):
                 font-weight: bold;
                 border: 1px solid rgba(100, 80, 60, 150);
                 border-radius: 4px;
-                margin-top: 10px;
+                /* margin-top: 10px; */ /* Removed, spacing handled by parent layout */
                 padding-top: 10px;
                 color: #FFE650;
             }
@@ -350,14 +356,14 @@ class SettingsModule(QWidget):
         layout.addWidget(group_box)
     
     def add_about_section(self, layout: QVBoxLayout) -> None:
-        """Add about section with app information."""
+        """Add About section."""
         group_box = QGroupBox("About")
         group_box.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
                 border: 1px solid rgba(100, 80, 60, 150);
                 border-radius: 4px;
-                margin-top: 10px;
+                /* margin-top: 10px; */ /* Removed, spacing handled by parent layout */
                 padding-top: 10px;
                 color: #FFE650;
             }

@@ -41,7 +41,7 @@ class CraftingListWidget(QListWidget):
             QListWidget::item {
                 padding: 8px 12px;
                 border-bottom: 1px solid rgba(80, 60, 40, 100);
-                color: rgb(220, 200, 160);
+                color: #FFF5D6; /* Cream color for list items */
             }
             QListWidget::item:selected {
                 background-color: rgba(180, 120, 60, 150);
@@ -183,7 +183,7 @@ class CraftingDetailWidget(QWidget):
                 label_widget.setFixedWidth(120)
                 detail_layout.addWidget(label_widget)
                 value_widget = QLabel(str(value))
-                value_widget.setStyleSheet("color: #FFE650;")
+                value_widget.setStyleSheet("color: #FFF5D6;") # Changed to cream
                 value_widget.setWordWrap(True)
                 detail_layout.addWidget(value_widget)
                 
@@ -222,7 +222,7 @@ class CraftingDetailWidget(QWidget):
                 border: 1px solid rgba(80, 60, 40, 100);
                 border-radius: 4px;
                 padding: 8px;
-                color: #FFE650;
+                color: #FFF5D6; /* Cream color for text edit */
                 font-size: 12px;
             }
         """)
@@ -262,7 +262,7 @@ class CraftingDetailWidget(QWidget):
                 background-color: rgba(60, 45, 30, 150);
                 border: 1px solid rgba(100, 80, 60, 150);
                 border-radius: 4px;
-                color: rgb(220, 200, 160);
+                color: #FFF5D6; /* Cream color for table text */
                 gridline-color: rgba(80, 60, 40, 100);
             }
             QTableWidget::item {
@@ -311,64 +311,95 @@ class CraftingModule(QWidget):
         self.load_recipes()
     
     def setup_ui(self) -> None:
-        """Set up the crafting module UI."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Header
+        """Set up the crafting module UI with the new standardized layout."""
+        module_layout = QVBoxLayout(self)
+        # Overall padding for the module pane. Top is 0; header_label handles its own top padding.
+        module_layout.setContentsMargins(10, 0, 10, 10)
+        module_layout.setSpacing(0) # Default spacing between items added to module_layout
+
+        # --- Header ---
         header_label = QLabel("Crafting Recipes")
         header_label.setStyleSheet("""
             QLabel {
-                font-size: 24px;
+                font-size: 20px;
                 font-weight: bold;
                 color: #FFE650;
-                padding: 10px 0;
+                padding: 5px 0px 5px 0px; /* 5px top, 5px bottom, 0px sides */
+                margin: 0;
             }
         """)
-        layout.addWidget(header_label)
-        
-        # Search and filter controls
-        controls_layout = QHBoxLayout()
-        
-        # Search box
+        header_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        module_layout.addWidget(header_label) # Stretch factor 0 (default)
+
+        # --- Controls ---
+        controls_widget = QWidget()
+        controls_layout = QHBoxLayout(controls_widget)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(5)
+
         search_label = QLabel("Search:")
         search_label.setStyleSheet("color: #FFE650; font-weight: bold;")
         controls_layout.addWidget(search_label)
 
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Search recipes...")
+        self.search_box.setStyleSheet("""            QLineEdit {
+                background-color: rgba(60, 45, 30, 150);
+                border: 1px solid rgba(100, 80, 60, 150);
+                border-radius: 4px;
+                padding: 6px;
+                color: #FFF5D6;
+                font-size: 12px;
+            }
+        """)
         self.search_box.textChanged.connect(self.filter_recipes)
         controls_layout.addWidget(self.search_box)
 
-        category_label = QLabel("Category:")
+        category_label = QLabel("Category:") # Note: Crafting recipes don't have categories yet
         category_label.setStyleSheet("color: #FFE650; font-weight: bold;")
         controls_layout.addWidget(category_label)
 
         self.category_filter = QComboBox()
+        self.category_filter.setStyleSheet("""            QComboBox {
+                background-color: rgba(60, 45, 30, 150);
+                border: 1px solid rgba(100, 80, 60, 150);
+                border-radius: 4px;
+                padding: 6px;
+                color: #FFF5D6;
+                font-size: 12px;
+            }
+            QComboBox QAbstractItemView { 
+                background-color: rgba(45, 35, 25, 255); 
+                color: #FFF5D6;
+                selection-background-color: rgba(180, 120, 60, 150);
+            }
+        """)
         self.category_filter.currentIndexChanged.connect(self.filter_recipes)
         controls_layout.addWidget(self.category_filter)
 
         controls_layout.addStretch()
-        layout.addLayout(controls_layout)
-        
-        # Main content area
+        module_layout.addWidget(controls_widget) # Stretch factor 0 (default)
+
+        # Add a defined space between controls and the splitter
+        module_layout.addSpacing(8)
+
+        # --- Main Content Area (Splitter) ---
         splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        # Recipe list
         self.recipe_list = CraftingListWidget()
         self.recipe_list.recipe_selected.connect(self.on_recipe_selected)
         splitter.addWidget(self.recipe_list)
-          # Recipe details
+        
         self.recipe_detail = CraftingDetailWidget()
         splitter.addWidget(self.recipe_detail)
         
-        # Set splitter proportions
         splitter.setSizes([300, 500])
         
-        layout.addWidget(splitter)
+        # Add splitter to the main layout with a stretch factor to fill remaining space
+        module_layout.addWidget(splitter, 1)
         
-        # Global button style for this module
-        self.setStyleSheet(self.styleSheet() + "\nQPushButton { background-color: #FFF5D6; color: rgb(45, 35, 25); border: none; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #FFE650; } QPushButton:pressed { background-color: #FFE650; }")
+        # Removed module-specific stylesheet for buttons, should be global or handled by main app style
+        # self.setStyleSheet(self.styleSheet() + ...)
     
     def load_recipes(self) -> None:
         """Load crafting recipes from the database."""

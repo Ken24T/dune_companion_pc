@@ -8,7 +8,7 @@ from typing import List, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QTextEdit, QSplitter, QLabel, QLineEdit, QComboBox,
-    QGroupBox, QScrollArea, QApplication
+    QGroupBox, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6 import QtCore
@@ -243,30 +243,37 @@ class ResourcesModule(QWidget):
         self.load_resources()
     
     def setup_ui(self) -> None:
-        """Set up the resources module UI."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Header
+        """Set up the resources module UI with a simplified layout structure."""
+        module_layout = QVBoxLayout(self)
+        # Overall padding for the module pane. Top is 0; header_label handles its own top padding.
+        module_layout.setContentsMargins(10, 0, 10, 10) 
+        module_layout.setSpacing(0) # Default spacing between items added to module_layout
+
+        # --- Header ---
         header_label = QLabel("Resources")
         header_label.setStyleSheet("""
             QLabel {
-                font-size: 24px;
+                font-size: 20px;
                 font-weight: bold;
                 color: #FFE650;
-                padding: 10px 0;
+                padding: 5px 0px 5px 0px; /* 5px top, 5px bottom, 0px sides */
+                margin: 0;
             }
         """)
-        layout.addWidget(header_label)
-        
-        # Search and filter controls
-        controls_layout = QHBoxLayout()
-        
-        # Search box
+        header_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        module_layout.addWidget(header_label) # Stretch factor 0 (default)
+
+        # --- Controls ---
+        # Search and filter controls (within their own widget for horizontal layout)
+        controls_widget = QWidget()
+        controls_layout = QHBoxLayout(controls_widget)
+        controls_layout.setContentsMargins(0, 0, 0, 0) # No extra margins for the controls widget itself
+        controls_layout.setSpacing(5) # Horizontal spacing for search/category items
+
         search_label = QLabel("Search:")
         search_label.setStyleSheet("color: #FFE650; font-weight: bold;")
         controls_layout.addWidget(search_label)
-        
+
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Search resources...")
         self.search_box.setStyleSheet("""
@@ -281,12 +288,11 @@ class ResourcesModule(QWidget):
         """)
         self.search_box.textChanged.connect(self.filter_resources)
         controls_layout.addWidget(self.search_box)
-        
-        # Category filter
+
         category_label = QLabel("Category:")
         category_label.setStyleSheet("color: #FFE650; font-weight: bold;")
         controls_layout.addWidget(category_label)
-        
+
         self.category_filter = QComboBox()
         self.category_filter.setStyleSheet("""
             QComboBox {
@@ -297,33 +303,33 @@ class ResourcesModule(QWidget):
                 color: #FFF5D6;
                 font-size: 12px;
             }
+            QComboBox QAbstractItemView { 
+                background-color: rgba(45, 35, 25, 255); 
+                color: #FFF5D6;
+                selection-background-color: rgba(180, 120, 60, 150);
+            }
         """)
         self.category_filter.currentTextChanged.connect(self.filter_resources)
         controls_layout.addWidget(self.category_filter)
         
-        controls_layout.addStretch()
-        layout.addLayout(controls_layout)
-        
-        # Main content area
+        controls_layout.addStretch() 
+        module_layout.addWidget(controls_widget) # Stretch factor 0 (default)
+
+        # Add a defined space between controls and the splitter
+        module_layout.addSpacing(8) 
+
+        # --- Main Content Area (Splitter) ---
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # Resource list
         self.resource_list = ResourceListWidget()
         self.resource_list.resource_selected.connect(self.on_resource_selected)
         splitter.addWidget(self.resource_list)
-        
-        # Resource details
+
         self.resource_detail = ResourceDetailWidget()
         splitter.addWidget(self.resource_detail)
-          # Set splitter proportions
-        splitter.setSizes([300, 500])
+        splitter.setSizes([300, 500]) # Initial sizes for list and detail panes
         
-        layout.addWidget(splitter)
-        
-        # Global button style (fix min-width for dialog buttons like About OK)
-        app_instance = QApplication.instance()
-        if isinstance(app_instance, QApplication):
-            app_instance.setStyleSheet(app_instance.styleSheet() + "\nQPushButton { background-color: #FFF5D6; color: rgb(45, 35, 25); border: none; border-radius: 4px; font-weight: bold; min-width: 80px; min-height: 28px; padding: 6px 24px; font-size: 14px; } QPushButton:hover { background-color: #FFE650; } QPushButton:pressed { background-color: #FFE650; }")
+        # Add splitter to the main layout with a stretch factor to fill remaining space
+        module_layout.addWidget(splitter, 1)
     
     def load_resources(self) -> None:
         """Load resources from the database."""

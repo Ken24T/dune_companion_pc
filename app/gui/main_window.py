@@ -234,33 +234,44 @@ class MainWindow(QMainWindow):
     def create_placeholder_module(self, title: str, message: str) -> QWidget:
         """Create a placeholder widget for modules not yet implemented."""
         widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Title label
-        title_label = QLabel(title)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet("""
+        main_module_layout = QVBoxLayout(widget) # Renamed for clarity
+        main_module_layout.setContentsMargins(10, 0, 10, 10) # Standard module margins
+        main_module_layout.setSpacing(0) # No space between header and content widget
+
+        # Standard Module Header
+        header_label = QLabel(title)
+        header_label.setStyleSheet("""
             QLabel {
-                font-size: 24px;
+                font-size: 20px;
                 font-weight: bold;
-                color: rgb(180, 120, 60);
-                margin-bottom: 20px;
+                color: #FFE650;
+                padding: 5px 0px;
+                margin: 0px;
+                border-bottom: 1px solid rgba(100, 80, 60, 150); /* Optional: adds a subtle separator */
             }
         """)
-        layout.addWidget(title_label)
+        header_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        main_module_layout.addWidget(header_label)
+
+        # Content Area for the placeholder message
+        content_widget = QWidget() # Specific widget for content below header
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        content_layout.setContentsMargins(0, 20, 0, 0) # Add some space above the message
         
-        # Message label
         message_label = QLabel(message)
         message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         message_label.setStyleSheet("""
             QLabel {
                 font-size: 16px;
-                color: rgb(200, 180, 140);
+                color: #FFF5D6; /* Cream color for placeholder message text */
                 margin-bottom: 40px;
             }
         """)
-        layout.addWidget(message_label)
+        content_layout.addWidget(message_label)
+        
+        main_module_layout.addWidget(content_widget)
+        main_module_layout.addStretch() # Push content to top if placeholder is simple
         
         return widget
     
