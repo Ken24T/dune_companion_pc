@@ -26,7 +26,7 @@ class AIWorker(QObject):
     error_occurred = Signal(str)
     finished = Signal() # Added finished signal
 
-    def __init__(self, prompt: str, model: str = "gpt-3.5-turbo"):
+    def __init__(self, prompt: str, model: str = "gpt-4"):
         super().__init__()
         self.prompt = prompt
         self.model = model
@@ -203,7 +203,7 @@ class AIAssistantModule(QWidget):
         logger.info(f"AI request submitted for prompt: {prompt[:50]}...")
         self.ai_thread = QThread()
         # Pass the model explicitly
-        self.ai_worker = AIWorker(prompt, model="gpt-3.5-turbo") 
+        self.ai_worker = AIWorker(prompt, model="gpt-4")
         self.ai_worker.moveToThread(self.ai_thread)
 
         self.ai_thread.started.connect(self.ai_worker.run)

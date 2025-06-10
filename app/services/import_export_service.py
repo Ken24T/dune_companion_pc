@@ -27,6 +27,7 @@ logger = get_logger(__name__)
 
 class ImportExportService:
     """Service for importing and exporting Dune Companion data."""
+    supported_formats = ['json', 'markdown', 'csv']
     
     def __init__(self, db_path: Optional[str] = None):
         """Initialize the import/export service."""

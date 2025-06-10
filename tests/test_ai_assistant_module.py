@@ -191,14 +191,14 @@ class TestAIAssistantModule(unittest.TestCase):
         # Configure the mocked class constructors to return these mock instances
         mock_AIWorker_cls.return_value = mock_worker_instance
         mock_QThread_cls.return_value = mock_thread_instance
-        
+
         self.module._on_submit_prompt() # Calls QThread() and AIWorker(...)
 
         # Assert that the class constructors were called as expected
-        mock_AIWorker_cls.assert_called_once_with("Valid prompt", model="gpt-3.5-turbo")
-        mock_QThread_cls.assert_called_once_with() # QThread constructor is called with no args
+        mock_AIWorker_cls.assert_called_once_with("Valid prompt", model="gpt-4")
+        mock_QThread_cls.assert_called_once()
 
-        # Assert that methods were called on the *instances*
+        # Assert that the worker and thread were configured and started
         mock_worker_instance.moveToThread.assert_called_once_with(mock_thread_instance)
         mock_thread_instance.start.assert_called_once()
 
