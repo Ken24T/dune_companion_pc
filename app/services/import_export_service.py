@@ -499,8 +499,16 @@ class ImportExportService:
                             continue
                         
                         if current_section == "resources":
-                            if final_key in ['category', 'rarity', 'description', 'source_locations', 'icon_path']:
-                                current_item[final_key] = value
+                            if final_key == 'category':
+                                current_item['category'] = value
+                            elif final_key == 'rarity':
+                                current_item['rarity'] = value
+                            elif final_key == 'description':
+                                current_item['description'] = value
+                            elif final_key == 'source_locations':
+                                current_item['source_locations'] = value
+                            elif final_key == 'icon_path':
+                                current_item['icon_path'] = value
                             elif final_key == 'name': # Name is already set from ###, but allow override if explicitly listed
                                 current_item['name'] = value
                             elif final_key == 'discovered':
