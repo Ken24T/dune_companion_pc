@@ -1,3 +1,4 @@
 PySide6
 httpx
 openai
+beautifulsoup4
