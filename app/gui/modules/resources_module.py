@@ -270,9 +270,9 @@ class ResourcesModule(QWidget):
         controls_layout.setContentsMargins(0, 0, 0, 0) # No extra margins for the controls widget itself
         controls_layout.setSpacing(5) # Horizontal spacing for search/category items
 
+        # Create search label and box first
         search_label = QLabel("Search:")
         search_label.setStyleSheet("color: #FFE650; font-weight: bold;")
-        controls_layout.addWidget(search_label)
 
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Search resources...")
@@ -287,7 +287,19 @@ class ResourcesModule(QWidget):
             }
         """)
         self.search_box.textChanged.connect(self.filter_resources)
-        controls_layout.addWidget(self.search_box)
+        # self.search_box.setFixedWidth(300) 
+
+        # Group search label and search box into a fixed-width widget
+        search_group_widget = QWidget()
+        search_group_layout = QHBoxLayout(search_group_widget)
+        search_group_layout.setContentsMargins(0, 0, 0, 0)
+        search_group_layout.setSpacing(5) # Internal spacing for search label and box
+        search_group_layout.addWidget(search_label)
+        search_group_layout.addWidget(self.search_box) # search_box will expand within this group
+        search_group_widget.setFixedWidth(300)
+
+        controls_layout.addWidget(search_group_widget) # Add the group to the main controls layout
+        controls_layout.addSpacing(20) # Changed to 20px spacing after the search group
 
         category_label = QLabel("Category:")
         category_label.setStyleSheet("color: #FFE650; font-weight: bold;")
