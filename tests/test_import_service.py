@@ -222,7 +222,8 @@ class TestImportExportService:
 
     def test_service_initialization(self):
         """Test that the service initializes correctly."""
-        assert self.service.supported_formats == ['json', 'markdown', 'csv']
+        assert self.service.supported_export_formats == ['json', 'markdown', 'csv']
+        assert self.service.supported_import_formats == ['json', 'csv'] # Removed markdown
         assert isinstance(self.service, ImportExportService)
     
     @patch('app.services.import_export_service.get_all_resources')
@@ -432,63 +433,6 @@ class TestImportExportService:
                 mock_import_rec.assert_called_once()
                 # Add more specific assertions about the data passed if necessary
 
-    def test_import_markdown(self):
-        """Test importing data from Markdown format."""
-        markdown_content = """\
-# Dune Companion Data Export
-
-## Export Information
-- **Export Date:** 2025-06-09T12:00:00Z
-- **App Version:** 0.1.0
-- **Total Resources:** 1
-- **Total Recipes:** 1
-
-## Resources
-
-### Spice
-- **Category:** Material
-- **Rarity:** Legendary
-- **Description:** The spice must flow.
-- **Source Locations:** Arrakis
-
-## Crafting Recipes
-
-### Stillsuit
-- **Category:** Equipment  # Added Category for Markdown parsing consistency
-- **Output:** 1x Stillsuit
-- **Station:** Fabricator
-- **Time:** 300 seconds
-- **Description:** Water recycling suit.
-- **Ingredient:** 2x Filter
-- **Ingredient:** 1x Sealant
-"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            md_path = Path(temp_dir) / "test_import.md"
-            md_path.write_text(markdown_content)
-    
-            with patch('app.services.import_export_service.ImportExportService._import_resources_data') as mock_import_res, \
-                 patch('app.services.import_export_service.ImportExportService._import_recipes_data') as mock_import_rec:
-                result = self.service.import_data(md_path, 'markdown', merge_strategy='update')
-                assert result is True
-                mock_import_res.assert_called_once()
-                mock_import_rec.assert_called_once()
-                
-                # Verify the data passed to _import_resources_data
-                args_res, _ = mock_import_res.call_args
-                assert len(args_res[0]) == 1
-                assert args_res[0][0]['name'] == 'Spice'
-                assert args_res[0][0]['category'] == 'Material'
-    
-                # Verify the data passed to _import_recipes_data
-                args_rec, _ = mock_import_rec.call_args
-                assert len(args_rec[0]) == 1
-                assert args_rec[0][0]['name'] == 'Stillsuit'
-                assert args_rec[0][0]['output_item_name'] == 'Stillsuit'
-                assert args_rec[0][0]['category'] == 'Equipment' # Added assertion for category
-                assert len(args_rec[0][0]['ingredients']) == 2
-                assert {'name': 'Filter', 'quantity': 2} in args_rec[0][0]['ingredients']
-                assert {'name': 'Sealant', 'quantity': 1} in args_rec[0][0]['ingredients']
-
     def test_export_all_data_json(self):
         """Test exporting all data to JSON format."""
         with tempfile.TemporaryDirectory() as temp_dir, \
@@ -580,7 +524,7 @@ class TestImportExportService:
             xml_path = Path(temp_dir) / 'test.xml'
             xml_path.write_text('<data></data>')
             
-            result = self.service.import_data(xml_path, 'xml')
+            result = self.service.import_data(xml_path, 'xml') # This will now correctly fail due to unsupported format
             assert result is False
 
 

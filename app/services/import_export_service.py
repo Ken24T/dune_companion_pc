@@ -30,7 +30,8 @@ class ImportExportService:
     
     def __init__(self, db_path: Optional[str] = None):
         """Initialize the import/export service."""
-        self.supported_formats = ['json', 'markdown', 'csv']
+        self.supported_export_formats = ['json', 'markdown', 'csv']
+        self.supported_import_formats = ['json', 'csv'] # Removed 'markdown'
         self.db_path = db_path or get_default_db_path()
         logger.info("Import/Export service initialized")
     
@@ -48,8 +49,8 @@ class ImportExportService:
             bool: True if export was successful, False otherwise
         """
         try:
-            if format_type not in self.supported_formats:
-                raise ValueError(f"Unsupported format: {format_type}")
+            if format_type not in self.supported_export_formats: # Changed to supported_export_formats
+                raise ValueError(f"Unsupported export format: {format_type}")
             
             # Get all data from database
             data = self._get_all_data()
@@ -120,8 +121,8 @@ class ImportExportService:
             bool: True if import was successful, False otherwise
         """
         try:
-            if format_type not in self.supported_formats:
-                raise ValueError(f"Unsupported format: {format_type}")
+            if format_type not in self.supported_import_formats: # Changed to supported_import_formats
+                raise ValueError(f"Unsupported import format: {format_type}")
             
             if not import_path.exists():
                 logger.error(f"Import file does not exist: {import_path}")
@@ -129,11 +130,14 @@ class ImportExportService:
             
             if format_type == 'json':
                 return self._import_json(import_path, merge_strategy)
-            elif format_type == 'markdown':
-                return self._import_markdown(import_path, merge_strategy)
+            # Removed markdown import logic
+            # elif format_type == \'markdown\':
+            #     return self._import_markdown(import_path, merge_strategy) 
             elif format_type == 'csv':
                 return self._import_csv(import_path, merge_strategy)
             else:
+                # This case should ideally not be reached if format_type is validated against supported_import_formats
+                logger.warning(f"Attempted to import with an unhandled format: {format_type}")
                 return False
                 
         except Exception as e:
@@ -417,183 +421,6 @@ class ImportExportService:
             
         except Exception as e:
             logger.error(f"Failed to export Markdown: {e}")
-            return False
-    
-    def _import_markdown(self, import_path: Path, merge_strategy: str) -> bool:
-        """Import data from a structured Markdown file."""
-        logger.info(f"Attempting to import Markdown data from: {import_path}")
-        try:
-            with open(import_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            resources_data = []
-            recipes_data = []
-            
-            current_section = None
-            current_item: Optional[Dict[str, Any]] = None
-
-            for line in content.splitlines():
-                line = line.strip()
-                if not line: # Skip empty lines
-                    continue
-
-                if line.startswith("## Resources"):
-                    current_section = "resources"
-                    if current_item: # Save previous item if any
-                        # This case implies we were in a recipe section and found a new Resource section header
-                        # which is unusual for the expected format but handling defensively.
-                        if current_section == "recipes": # This condition will actually be false due to line above
-                            recipes_data.append(current_item) # So this line is unlikely to be hit.
-                    current_item = None
-                    continue
-                elif line.startswith("## Crafting Recipes"):
-                    if current_item and current_section == "resources": # Save last resource item before switching
-                        resources_data.append(current_item)
-                    current_section = "recipes"
-                    current_item = None
-                    continue
-                elif line.startswith("### "):
-                    if current_item:
-                        if current_section == "resources":
-                            resources_data.append(current_item)
-                        elif current_section == "recipes":
-                            recipes_data.append(current_item)
-                    
-                    item_name = line[4:].strip()
-                    current_item = {"name": item_name}
-                    if current_section == "resources" and current_item is not None:
-                        current_item['category'] = None # Initialize category for resources
-                    if current_section == "recipes" and current_item is not None:
-                        current_item['ingredients'] = [] 
-                        current_item['category'] = None # Initialize category for recipes
-                    continue
-
-                elif line.startswith("- ") and current_item is not None:
-                    try:
-                        line_content_after_dash = line[2:]
-                        colon_idx = line_content_after_dash.find(':')
-                        
-                        if colon_idx == -1:
-                            logger.warning(f"Malformed key-value line (no colon found): {line}")
-                            continue
-
-                        raw_key_part = line_content_after_dash[:colon_idx]
-                        value_part = line_content_after_dash[colon_idx+1:].strip()
-
-                        processed_key = raw_key_part.strip()
-
-                        if processed_key.endswith(':'):
-                            processed_key = processed_key[:-1]
-                        
-                        if processed_key.startswith('**') and processed_key.endswith('**') and len(processed_key) >= 4:
-                            processed_key = processed_key[2:-2]
-                        elif processed_key.startswith('*') and processed_key.endswith('*') and len(processed_key) >= 2:
-                            processed_key = processed_key[1:-1]
-                        
-                        final_key = processed_key.strip().lower().replace(' ', '_')
-                        
-                        value = value_part
-
-                        if not final_key:
-                            logger.warning(f"Empty key after processing line: {line} (processed_key was: '{processed_key}')")
-                            continue
-                        
-                        if current_section == "resources":
-                            if final_key == 'category':
-                                current_item['category'] = value
-                            elif final_key == 'rarity':
-                                current_item['rarity'] = value
-                            elif final_key == 'description':
-                                current_item['description'] = value
-                            elif final_key == 'source_locations':
-                                current_item['source_locations'] = value
-                            elif final_key == 'icon_path':
-                                current_item['icon_path'] = value
-                            elif final_key == 'name': # Name is already set from ###, but allow override if explicitly listed
-                                current_item['name'] = value
-                            elif final_key == 'discovered':
-                                current_item['discovered'] = int(value) if value.isdigit() else 0
-                            # Add other resource fields as needed, with type conversion
-
-                        elif current_section == "recipes":
-                            if final_key == "output": 
-                                parts = value.split('x', 1)
-                                if len(parts) == 2 and parts[0].strip().isdigit():
-                                    current_item['output_quantity'] = int(parts[0].strip())
-                                    current_item['output_item_name'] = parts[1].strip()
-                                else:
-                                    current_item['output_item_name'] = value 
-                                    current_item['output_quantity'] = 1
-                            elif final_key == "station":
-                                current_item['required_station'] = value
-                            elif final_key == "time": 
-                                time_val = value.split()[0]
-                                current_item['crafting_time_seconds'] = int(time_val) if time_val.isdigit() else 0
-                            elif final_key == "description":
-                                current_item['description'] = value
-                            elif final_key == "category":
-                                current_item['category'] = value
-                            elif final_key == "skill_required" or final_key == "skill_requirement":
-                                current_item['skill_requirement'] = value
-                            elif final_key == "icon_path":
-                                current_item['icon_path'] = value
-                            elif final_key == 'discovered':
-                                current_item['discovered'] = int(value) if value.isdigit() else 0
-                            elif final_key == "ingredient" or final_key == "ingredients":
-                                # Improved ingredient parsing: expects "- Ingredient: 2x Iron Ingot" or "- Ingredients: 2x Iron Ingot"
-                                # or "- Ingredient: Spice" (implies quantity 1)
-                                ing_parts = value.split('x', 1)
-                                ing_qty = 1
-                                ing_name = ''
-                                if len(ing_parts) == 2 and ing_parts[0].strip().isdigit():
-                                    ing_qty = int(ing_parts[0].strip())
-                                    ing_name = ing_parts[1].strip()
-                                elif len(ing_parts) == 1:
-                                    ing_name = ing_parts[0].strip()
-                                else:
-                                    logger.warning(f"Could not parse ingredient line format: {line} for recipe {current_item.get('name')}")
-                                    continue
-                                
-                                if ing_name:
-                                    # Ensure 'ingredients' list exists, which it should if current_section is "recipes"
-                                    if 'ingredients' not in current_item:
-                                        current_item['ingredients'] = []
-                                    current_item['ingredients'].append({"name": ing_name, "quantity": ing_qty})
-                                else:
-                                    logger.warning(f"Empty ingredient name from line: {line} for recipe {current_item.get('name')}")
-                            # Add other recipe fields with type conversion
-                    except ValueError as ve:
-                        logger.warning(f"Skipping line due to ValueError: '{line}'. Error: {ve}")
-                    except Exception as e:
-                        logger.warning(f"Skipping line due to parsing error: '{line}'. Error: {e}")
-            
-            # Add the last item being processed
-            if current_item:
-                if current_section == "resources":
-                    resources_data.append(current_item)
-                elif current_section == "recipes":
-                    recipes_data.append(current_item)
-
-            if not resources_data and not recipes_data:
-                logger.warning(f"No data parsed from Markdown file: {import_path}")
-                return False
-
-            if resources_data:
-                logger.info(f"Parsed {len(resources_data)} resources from Markdown.")
-                self._import_resources_data(resources_data, merge_strategy)
-            
-            if recipes_data:
-                logger.info(f"Parsed {len(recipes_data)} recipes from Markdown.")
-                self._import_recipes_data(recipes_data, merge_strategy)
-            
-            logger.info(f"Data imported from Markdown: {import_path}")
-            return True
-            
-        except FileNotFoundError:
-            logger.error(f"Markdown import file not found: {import_path}")
-            return False
-        except Exception as e:
-            logger.error(f"Failed to import Markdown: {e}", exc_info=True)
             return False
     
     def _export_resources_markdown(self, resources: List[Resource], export_path: Path) -> bool:
