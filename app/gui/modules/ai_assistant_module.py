@@ -195,13 +195,15 @@ class AIAssistantModule(QWidget):
             QMessageBox.critical(self, "API Key Error", "OpenAI API key is not configured or invalid. Please check settings.")
             return
 
-        self.response_area.setText("<i>Thinking...</i>")
+        self.response_area.setHtml("<i>Thinking...</i>") # Use setHtml for HTML content
         self.submit_button.setEnabled(False)
         self.prompt_input.setEnabled(False)
 
-        # Setup and start the AI worker thread
+        # Start AI worker thread
+        logger.info(f"AI request submitted for prompt: {prompt[:50]}...")
         self.ai_thread = QThread()
-        self.ai_worker = AIWorker(prompt)
+        # Pass the model explicitly
+        self.ai_worker = AIWorker(prompt, model="gpt-3.5-turbo") 
         self.ai_worker.moveToThread(self.ai_thread)
 
         self.ai_thread.started.connect(self.ai_worker.run)
@@ -214,7 +216,6 @@ class AIAssistantModule(QWidget):
         self.ai_thread.finished.connect(self.ai_thread.deleteLater)
         
         self.ai_thread.start()
-        logger.info(f"AI request submitted for prompt: {prompt[:50]}...")
 
     @Slot(str)
     def _handle_ai_response(self, response_text: str):
