@@ -24,6 +24,7 @@ class AIWorker(QObject):
     """
     response_ready = Signal(str)
     error_occurred = Signal(str)
+    finished = Signal() # Added finished signal
 
     def __init__(self, prompt: str, model: str = "gpt-3.5-turbo"):
         super().__init__()
@@ -43,6 +44,8 @@ class AIWorker(QObject):
         except Exception as e:
             logger.error(f"Exception in AIWorker: {e}", exc_info=True)
             self.error_occurred.emit(f"An unexpected error occurred in the AI worker: {e}")
+        finally:
+            self.finished.emit() # Emit finished signal
 
 class AIAssistantModule(QWidget):
     """AI Assistant module widget."""

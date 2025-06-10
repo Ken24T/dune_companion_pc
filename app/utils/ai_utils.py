@@ -51,9 +51,18 @@ def get_ai_response(prompt_text: str, model: str = "gpt-3.5-turbo") -> str:
                 {"role": "user", "content": prompt_text}
             ]
         )
-        # Check if content is not None before stripping
+        
+        if not response.choices:
+            logger.warning("No response choices received from OpenAI API.")
+            return "Error: No response choices received from the AI."
+
         content = response.choices[0].message.content
-        ai_message = content.strip() if content else ""
+        
+        if content is None or not content.strip():
+            logger.warning("Received an empty message content from OpenAI API.")
+            return "Error: Received an empty response from the AI."
+            
+        ai_message = content.strip()
         logger.info(f"Received response from OpenAI API: '{ai_message[:50]}...'")
         return ai_message
     except openai.APIConnectionError as e:
@@ -65,6 +74,7 @@ def get_ai_response(prompt_text: str, model: str = "gpt-3.5-turbo") -> str:
     except openai.AuthenticationError as e:
         logger.error(f"OpenAI API authentication error: {e}")
         return f"Error: OpenAI API authentication failed. Please check your API key. Details: {e}"
+    # Ensure openai.APIError is caught before the generic Exception
     except openai.APIError as e: # Catch other API-related errors
         logger.error(f"OpenAI API error: {e}")
         return f"Error: An OpenAI API error occurred. Details: {e}"
