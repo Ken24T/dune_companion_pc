@@ -17,6 +17,7 @@ from PySide6.QtGui import QAction # QAction is kept
 from app.gui.modules.resources_module import ResourcesModule
 from app.gui.modules.crafting_module import CraftingModule
 from app.gui.modules.settings_module import SettingsModule
+from app.gui.modules.ai_assistant_module import AIAssistantModule # Added import
 from app.utils.logger import get_logger
 from app.utils.network_utils import check_internet_connection
 
@@ -233,7 +234,7 @@ class MainWindow(QMainWindow):
             self.modules["skill_tree"] = self.create_placeholder_module("Skill Tree", "Skill tree planning coming soon...")
             self.modules["base_builder"] = self.create_placeholder_module("Base Builder", "Base blueprint designer coming soon...")
             self.modules["lore_&_wiki"] = self.create_placeholder_module("Lore & Wiki", "Lore and wiki browser coming soon...")
-            self.modules["ai_assistant"] = self.create_placeholder_module("AI Assistant", "AI-powered strategy assistant coming soon...")
+            self.modules["ai_assistant"] = AIAssistantModule(self) # Replaced placeholder
             self.modules["settings"] = SettingsModule(self)
             
             # Add modules to the stacked widget
